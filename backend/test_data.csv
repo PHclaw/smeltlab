@@ -1,0 +1,11 @@
+name,email,age,date,phone
+Alice,alice@gmail.com,25,2024-01-15,13800138001
+Bob,bob@yahoo.com,30,01/20/2024,13900139002
+Alice,alice@gmail.com,25,2024-01-15,13800138001
+Charlie,bad-email,150,04/05/2024,13700137003
+David,david@test.com,28,2024-06-01,13600136004
+Eve,eve@test,22,08/15/2024,
+Frank,frank@mail.com,35,2024-02-10,13500135005
+Alice,alice@gmail.com,25,2024-01-15,13800138001
+Grace,grace@web.com,29,03/25/2024,13400134006
+Henry,,31,2024-04-15,13300133007

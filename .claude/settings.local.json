@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app.services.conversation import Conversation, chat_with_ai, get_or_create_conversation; print\\('conversation.py OK'\\)\")",
+      "Bash(python -c \"from app.schemas.api import ChatRequest, ChatResponse, ExecuteChatRequest; print\\('schemas OK'\\)\")",
+      "Bash(python -c \"from app.api.routes.clean import router; print\\('routes OK'\\)\")",
+      "Bash(where python3 *)",
+      "Bash(where python *)",
+      "Bash(py --version)",
+      "Bash(uv python *)",
+      "Bash(py *)",
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill *)"
+    ]
+  }
+}

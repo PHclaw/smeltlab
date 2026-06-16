@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataCleanr - Promotional Poster</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 40px;
+  }
+
+  .poster {
+    width: 1080px;
+    min-height: 1520px;
+    background: linear-gradient(165deg, #0f0c29 0%, #1a1a3e 30%, #24243e 60%, #0f0c29 100%);
+    border-radius: 24px;
+    overflow: hidden;
+    position: relative;
+    color: white;
+  }
+
+  /* Animated background grid */
+  .bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(99, 102, 241, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99, 102, 241, 0.06) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+
+  /* Glow effects */
+  .glow-1 {
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    top: -100px;
+    right: -100px;
+    pointer-events: none;
+  }
+
+  .glow-2 {
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+    bottom: 200px;
+    left: -100px;
+    pointer-events: none;
+  }
+
+  .content {
+    position: relative;
+    z-index: 1;
+    padding: 80px 70px;
+  }
+
+  /* Top badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 100px;
+    padding: 8px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #a5b4fc;
+    letter-spacing: 0.5px;
+    margin-bottom: 40px;
+  }
+
+  .badge-dot {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Logo area */
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .logo-icon {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+  }
+
+  .logo-text {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  /* Headline */
+  .headline {
+    font-size: 72px;
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: -2px;
+    margin-bottom: 24px;
+  }
+
+  .headline .highlight {
+    background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subheadline {
+    font-size: 24px;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.6;
+    max-width: 600px;
+    margin-bottom: 60px;
+    font-weight: 400;
+  }
+
+  /* Feature cards */
+  .features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 60px;
+  }
+
+  .feature-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 28px;
+    transition: all 0.3s;
+  }
+
+  .feature-card:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .feature-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 16px;
+  }
+
+  .fi-purple { background: rgba(99, 102, 241, 0.15); }
+  .fi-green { background: rgba(16, 185, 129, 0.15); }
+  .fi-amber { background: rgba(245, 158, 11, 0.15); }
+  .fi-pink { background: rgba(236, 72, 153, 0.15); }
+
+  .feature-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .feature-desc {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.45);
+    line-height: 1.5;
+  }
+
+  /* Flow section */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 60px;
+    padding: 32px 0;
+  }
+
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .flow-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: 700;
+    border: 2px solid rgba(99, 102, 241, 0.4);
+    background: rgba(99, 102, 241, 0.1);
+    color: #a5b4fc;
+  }
+
+  .flow-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+  }
+
+  .flow-arrow {
+    font-size: 24px;
+    color: rgba(99, 102, 241, 0.4);
+    margin: 0 16px;
+    margin-bottom: 24px;
+  }
+
+  /* Stats row */
+  .stats {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 60px;
+    padding: 28px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .stat-item {
+    text-align: center;
+    flex: 1;
+  }
+
+  .stat-value {
+    font-size: 40px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #10b981, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .stat-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  /* CTA */
+  .cta-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .cta-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: linear-gradient(135deg, #6366f1, #7c3aed);
+    color: white;
+    padding: 18px 40px;
+    border-radius: 14px;
+    font-size: 20px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.35);
+    transition: all 0.3s;
+  }
+
+  .cta-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(99, 102, 241, 0.5);
+  }
+
+  .cta-sub {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.25);
+  }
+
+  .footer-tags {
+    display: flex;
+    gap: 12px;
+  }
+
+  .footer-tag {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.35);
+  }
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="bg-grid"></div>
+  <div class="glow-1"></div>
+  <div class="glow-2"></div>
+
+  <div class="content">
+    <!-- Badge -->
+    <div class="badge">
+      <span class="badge-dot"></span>
+      AI-POWERED DATA CLEANING
+    </div>
+
+    <!-- Logo -->
+    <div class="logo">
+      <div class="logo-icon">✨</div>
+      <span class="logo-text">DataCleanr</span>
+    </div>
+
+    <!-- Headline -->
+    <h1 class="headline">
+      数据清洗<br>
+      从 <span class="highlight">3 天</span> 到 <span class="highlight">3 分钟</span>
+    </h1>
+    <p class="subheadline">
+      用自然语言驱动的 AI 清洗引擎，上传数据、对话交互、一键导出。<br>
+      为 ML 工程师打造的训练数据清洗利器。
+    </p>
+
+    <!-- Features -->
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-icon fi-purple">📊</div>
+        <div class="feature-title">智能数据探测</div>
+        <div class="feature-desc">自动分析数据健康度，检测缺失值、重复行、异常值，生成可视化报告</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-green">💬</div>
+        <div class="feature-title">对话式清洗</div>
+        <div class="feature-desc">像聊天一样清洗数据 — 告诉 AI 你想做什么，实时反馈、迭代优化</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-amber">🔍</div>
+        <div class="feature-title">Diff 分组审查</div>
+        <div class="feature-desc">按步骤分组审查每个变更，逐组接受或拒绝，精确掌控每一步</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-pink">📋</div>
+        <div class="feature-title">Recipe 复用</div>
+        <div class="feature-desc">保存清洗方案为 Recipe，下次对新数据一键复用，保持一致性</div>
+      </div>
+    </div>
+
+    <!-- Flow -->
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-circle">📤</div>
+        <span class="flow-label">上传数据</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <div class="flow-circle">🤖</div>
+        <span class="flow-label">AI 分析</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <div class="flow-circle">💬</div>
+        <span class="flow-label">对话清洗</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <div class="flow-circle">✅</div>
+        <span class="flow-label">审查导出</span>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-value">100x</div>
+        <div class="stat-label">清洗速度提升</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">0 代码</div>
+        <div class="stat-label">自然语言驱动</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">10+</div>
+        <div class="stat-label">预置清洗操作</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">CSV/JSON</div>
+        <div class="stat-label">多格式支持</div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta-section">
+      <a href="#" class="cta-button">
+        立即体验 →
+      </a>
+      <span class="cta-sub">Free tier 可用 · 无需信用卡</span>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>datacleanr.ai</span>
+      <div class="footer-tags">
+        <span class="footer-tag">#MachineLearning</span>
+        <span class="footer-tag">#DataCleaning</span>
+        <span class="footer-tag">#AI</span>
+        <span class="footer-tag">#FineTuning</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

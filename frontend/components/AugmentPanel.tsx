@@ -90,27 +90,31 @@ export function AugmentPanel({ datasetId, columns, onClose, onComplete }: Augmen
       const es = new EventSource(`${API_BASE}/datasets/${datasetId}/augment/${result.task_id}/stream`);
       eventSourceRef.current = es;
 
-      es.onmessage = (event) => {
-        const data: AugmentProgress = JSON.parse(event.data);
+      es.addEventListener('message', (event: MessageEvent) => {
+        try {
+          const data: AugmentProgress = JSON.parse(event.data);
 
-        if (data.phase === 'heartbeat') return;
+          if (data.phase === 'heartbeat') return;
 
-        setProgress(data.progress_pct);
-        setProcessed(data.processed);
-        setTotal(data.total);
-        setStats(data.stats || {});
-        setMessage(data.message || '');
+          setProgress(data.progress_pct);
+          setProcessed(data.processed);
+          setTotal(data.total);
+          setStats(data.stats || {});
+          setMessage(data.message || '');
 
-        if (data.example) {
-          setExamples((prev) => [data.example!, ...prev].slice(0, 50));
+          if (data.example) {
+            setExamples((prev) => [data.example!, ...prev].slice(0, 50));
+          }
+
+          if (data.phase === 'done' || data.phase === 'cancelled') {
+            es.close();
+            eventSourceRef.current = null;
+            setPhase('done');
+          }
+        } catch {
+          // Ignore parse errors
         }
-
-        if (data.phase === 'done' || data.phase === 'cancelled') {
-          es.close();
-          eventSourceRef.current = null;
-          setPhase('done');
-        }
-      };
+      });
 
       es.onerror = () => {
         es.close();

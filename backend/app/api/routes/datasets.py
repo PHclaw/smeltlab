@@ -29,7 +29,7 @@ from app.services.profiler import profile_data, read_file_bytes
 from app.services.validator import validate_dataset as validate_llm_data, fix_dataset as fix_llm_data, detect_format
 from app.services.chunker import chunk_dataframe
 from app.services.streaming import profile_large_file
-from app.services.augmenter import AugmentTask, run_augmentation, apply_augmentation
+from app.services.augmenter import AugmentTask, start_augmentation as run_augment_thread, apply_augmentation
 
 # SSE progress store (in-memory for MVP)
 _progress: dict[str, dict] = {}
@@ -609,8 +609,8 @@ async def start_augmentation(dataset_id: str, request: AugmentRequest):
     )
     _augment_tasks[task_id] = task
 
-    # Start augmentation in background
-    asyncio.create_task(run_augmentation(task, df))
+    # Start augmentation in background thread
+    run_augment_thread(task, df)
 
     return AugmentStartResponse(
         task_id=task_id,
@@ -624,25 +624,27 @@ async def start_augmentation(dataset_id: str, request: AugmentRequest):
 @router.get("/{dataset_id}/augment/{task_id}/stream")
 async def augment_stream(dataset_id: str, task_id: str):
     """SSE stream of augmentation progress with real-time examples."""
+    from sse_starlette.sse import EventSourceResponse
+
     task = _augment_tasks.get(task_id)
     if not task:
         raise HTTPException(404, "Augmentation task not found")
 
     async def event_generator():
         while True:
+            # Poll the thread-safe queue from the async context
             try:
-                progress = await asyncio.wait_for(task.progress_queue.get(), timeout=30.0)
-            except asyncio.TimeoutError:
-                # Send heartbeat to keep connection alive
-                yield f"data: {_json.dumps({'phase': 'heartbeat'})}\n\n"
+                progress = await asyncio.to_thread(task.progress_queue.get, True, 2.0)
+            except Exception:
+                # Queue empty — send heartbeat
+                yield {"event": "heartbeat", "data": _json.dumps({"phase": "heartbeat"})}
                 continue
 
             if progress is None:
                 # Sentinel — stream is done
-                yield f"data: {_json.dumps({'phase': 'done', 'message': 'complete'})}\n\n"
+                yield {"event": "message", "data": _json.dumps({"phase": "done", "message": "complete"})}
                 break
 
-            # Serialize progress
             data = {
                 "task_id": progress.task_id,
                 "phase": progress.phase,
@@ -662,18 +664,9 @@ async def augment_stream(dataset_id: str, task_id: str):
                     "changes": progress.example.changes[:5],
                 }
 
-            yield f"data: {_json.dumps(data, ensure_ascii=False)}\n\n"
+            yield {"event": "message", "data": _json.dumps(data, ensure_ascii=False)}
 
-    from fastapi.responses import StreamingResponse
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return EventSourceResponse(event_generator())
 
 
 @router.post("/{dataset_id}/augment/{task_id}/apply", response_model=AugmentApplyResponse)
@@ -692,7 +685,7 @@ async def apply_augment(dataset_id: str, task_id: str):
     original_count = len(df)
 
     # Apply augmentation
-    augmented_df = apply_augmentation(df, task.results, task)
+    augmented_df = apply_augmentation(df, task.results)
 
     # Store augmented DataFrame
     aug_key = f"{dataset_id}_augmented_{task_id}"

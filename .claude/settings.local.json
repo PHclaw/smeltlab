@@ -13,7 +13,13 @@
       "Bash(npx next *)",
       "Bash(netstat -ano)",
       "Bash(taskkill *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s http://localhost:8000/openapi.json)",
+      "Bash(curl -s -X POST http://localhost:8000/api/datasets/ecf5e168-f3e5-49ef-a3bc-dd78de12375b/augment -H 'Content-Type: application/json' -d '{\"strategy\":\"text_augment\",\"multiplier\":2}')",
+      "Bash(timeout 10 curl -s -N http://localhost:8000/api/datasets/ecf5e168-f3e5-49ef-a3bc-dd78de12375b/augment/e2ffd4f5-2420-44a2-b560-1cea94aad68f/stream)"
     ]
   }
 }

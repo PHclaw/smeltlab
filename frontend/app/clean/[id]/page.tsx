@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { formatNumber, formatDuration } from '@/lib/utils';
 import { DiffReview } from '@/components/DiffReview';
+import { AugmentPanel } from '@/components/AugmentPanel';
 
 const QUICK_ACTIONS = [
   { label: 'Remove Duplicates', message: 'Remove all duplicate rows' },
@@ -27,6 +28,8 @@ const QUICK_ACTIONS = [
   { label: 'Smart Sample', message: 'Take a stratified sample of 10000 rows preserving class distribution' },
   { label: 'LLM Format Fix', message: 'Validate and fix LLM training data format (ChatML/Alpaca/ShareGPT)' },
 ];
+
+const AUGMENT_ACTION = { label: '🧬 Augment Data', desc: 'Generate new samples with real-time progress' };
 
 const OP_ICONS: Record<string, typeof Shield> = {
   dedup: RotateCcw,
@@ -67,6 +70,7 @@ export default function CleanPage() {
   const [versions, setVersions] = useState<VersionInfo[]>([]);
   const [currentVersion, setCurrentVersion] = useState(0);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showAugmentPanel, setShowAugmentPanel] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -399,6 +403,12 @@ export default function CleanPage() {
                 {action.label}
               </button>
             ))}
+            <button
+              onClick={() => setShowAugmentPanel(true)}
+              className="rounded-full border border-primary-300 bg-primary-50 px-4 py-2 text-sm text-primary-700 font-medium transition-all hover:bg-primary-100"
+            >
+              {AUGMENT_ACTION.label}
+            </button>
           </div>
         </div>
       )}
@@ -479,6 +489,13 @@ export default function CleanPage() {
                   {action.label}
                 </button>
               ))}
+              <button
+                onClick={() => setShowAugmentPanel(true)}
+                disabled={isAiTyping || isExecuting}
+                className="rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs text-primary-700 font-medium transition-all hover:bg-primary-100 disabled:opacity-50"
+              >
+                {AUGMENT_ACTION.label}
+              </button>
             </div>
           )}
 
@@ -521,6 +538,27 @@ export default function CleanPage() {
           </div>
         </div>
       </div>
+
+      {/* Augment Panel Overlay */}
+      {showAugmentPanel && profile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <AugmentPanel
+              datasetId={datasetId}
+              columns={profile.columns.map((c) => c.name)}
+              onClose={() => setShowAugmentPanel(false)}
+              onComplete={(newRows) => {
+                setShowAugmentPanel(false);
+                setMessages((prev) => [...prev, {
+                  id: `augment-${Date.now()}`,
+                  role: 'assistant',
+                  content: `Data augmentation complete! Added ${formatNumber(newRows)} new samples to the dataset. The data now has more diverse examples for better model training. What would you like to do next?`,
+                }]);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

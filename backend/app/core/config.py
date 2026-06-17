@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     glm_api_key: str = ""
     glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    glm_model: str = "GLM-4.5-Air"
+    glm_model: str = "glm-4.5-air"
 
     # Storage
     storage_backend: str = "local"  # local | s3 | r2

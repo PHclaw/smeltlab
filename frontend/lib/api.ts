@@ -690,3 +690,89 @@ export async function getDriftReport(conversationId: string): Promise<DriftRepor
   if (!res.ok) throw new Error('Failed to get drift report');
   return res.json();
 }
+
+// --- Augmentation ---
+
+export interface AugmentExample {
+  row_index: number;
+  technique: string;
+  original: Record<string, any>;
+  augmented: Record<string, any>;
+  changes: string[];
+}
+
+export interface AugmentProgress {
+  task_id: string;
+  phase: string;
+  progress_pct: number;
+  processed: number;
+  total: number;
+  example: AugmentExample | null;
+  stats: Record<string, number>;
+  message: string;
+}
+
+export interface AugmentStartResponse {
+  task_id: string;
+  dataset_id: string;
+  strategy: string;
+  target_count: number;
+  stream_url: string;
+}
+
+export interface AugmentApplyResponse {
+  dataset_id: string;
+  augmented_key: string;
+  total_original: number;
+  total_augmented: number;
+  new_rows_added: number;
+}
+
+export async function startAugmentation(
+  datasetId: string,
+  options: {
+    strategy?: string;
+    multiplier?: number;
+    targetCount?: number;
+    columns?: string[];
+  } = {}
+): Promise<AugmentStartResponse> {
+  const res = await fetch(`${API_BASE}/datasets/${datasetId}/augment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      strategy: options.strategy ?? 'auto',
+      multiplier: options.multiplier ?? 2.0,
+      target_count: options.targetCount ?? null,
+      columns: options.columns ?? [],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Augmentation failed' }));
+    throw new Error(err.detail || 'Augmentation failed');
+  }
+  return res.json();
+}
+
+export async function applyAugmentation(
+  datasetId: string,
+  taskId: string
+): Promise<AugmentApplyResponse> {
+  const res = await fetch(`${API_BASE}/datasets/${datasetId}/augment/${taskId}/apply`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Apply failed' }));
+    throw new Error(err.detail || 'Apply failed');
+  }
+  return res.json();
+}
+
+export async function cancelAugmentation(
+  datasetId: string,
+  taskId: string
+): Promise<void> {
+  await fetch(`${API_BASE}/datasets/${datasetId}/augment/${taskId}/cancel`, {
+    method: 'POST',
+  });
+}

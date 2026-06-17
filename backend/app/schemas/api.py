@@ -187,6 +187,31 @@ class ValidateRequest(BaseModel):
     max_tokens: int = Field(4096, description="Max tokens per sample for flagging")
 
 
+# --- Augmentation ---
+
+class AugmentRequest(BaseModel):
+    strategy: str = Field("auto", description="auto | llm_paraphrase | text_augment | numeric_noise | oversample")
+    multiplier: float = Field(2.0, description="Data multiplier (e.g. 2.0 = double the rows)")
+    target_count: int | None = Field(None, description="Exact number of new samples to generate")
+    columns: list[str] = Field(default_factory=list, description="Columns to augment (empty = auto)")
+
+
+class AugmentStartResponse(BaseModel):
+    task_id: str
+    dataset_id: str
+    strategy: str
+    target_count: int
+    stream_url: str
+
+
+class AugmentApplyResponse(BaseModel):
+    dataset_id: str
+    augmented_key: str
+    total_original: int
+    total_augmented: int
+    new_rows_added: int
+
+
 # --- Chunking ---
 
 class ChunkRequest(BaseModel):

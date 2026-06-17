@@ -5,17 +5,30 @@ from __future__ import annotations
 import io
 import uuid
 from pathlib import Path
+from typing import List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
 from app.schemas.api import (
+    BatchUploadResponse,
+    ChunkRequest,
+    ChunkResponse,
     DatasetUploadResponse,
     PreviewResponse,
     ProfileResponse,
+    ValidateRequest,
+    ValidationErrorSchema,
+    ValidationResultResponse,
 )
 from app.services.profiler import profile_data, read_file_bytes
+from app.services.validator import validate_dataset as validate_llm_data, fix_dataset as fix_llm_data, detect_format
+from app.services.chunker import chunk_dataframe
+from app.services.streaming import profile_large_file
+
+# SSE progress store (in-memory for MVP)
+_progress: dict[str, dict] = {}
 
 router = APIRouter()
 settings = get_settings()
@@ -24,6 +37,7 @@ settings = get_settings()
 _datasets: dict[str, dict] = {}
 _dataframes: dict[str, object] = {}  # dataset_id -> pl.DataFrame
 _profiles: dict[str, dict] = {}
+_batches: dict[str, list[str]] = {}  # batch_id -> [dataset_ids]
 
 
 def _detect_format(filename: str) -> str:
@@ -39,7 +53,7 @@ async def upload_dataset(file: UploadFile = File(...)):
         raise HTTPException(400, "No filename provided")
 
     file_format = _detect_format(file.filename)
-    supported = {"csv", "json", "jsonl", "xlsx", "parquet"}
+    supported = {"csv", "json", "jsonl", "xlsx", "parquet", "txt", "md"}
     if file_format not in supported:
         raise HTTPException(400, f"Unsupported format: {file_format}. Supported: {supported}")
 
@@ -53,7 +67,13 @@ async def upload_dataset(file: UploadFile = File(...)):
 
     # Parse into DataFrame
     try:
-        df = read_file_bytes(content, file_format)
+        if file_format in ("txt", "md"):
+            # Text files: single-row DataFrame with full text
+            text = content.decode("utf-8", errors="replace")
+            import polars as pl
+            df = pl.DataFrame({"text": [text], "source": [file.filename]})
+        else:
+            df = read_file_bytes(content, file_format)
     except Exception as e:
         raise HTTPException(422, f"Failed to parse file: {e}")
 
@@ -78,10 +98,15 @@ async def upload_dataset(file: UploadFile = File(...)):
     }
     _dataframes[dataset_id] = df
 
-    # Auto-profile
+    # Auto-profile — use streaming for large files
     try:
-        report = profile_data(df, file_size)
-        _profiles[dataset_id] = report
+        if file_size > 50 * 1024 * 1024 and file_format in ("csv", "jsonl", "ndjson", "parquet"):
+            # Large file: use streaming profiler
+            profile_result = profile_large_file(str(file_path), file_format)
+            _profiles[dataset_id] = type("ProfileReport", (), profile_result)()
+        else:
+            report = profile_data(df, file_size)
+            _profiles[dataset_id] = report
     except Exception as e:
         _datasets[dataset_id]["status"] = "error"
         raise HTTPException(500, f"Profiling failed: {e}")
@@ -95,6 +120,84 @@ async def upload_dataset(file: UploadFile = File(...)):
         file_size_bytes=file_size,
         status="ready",
     )
+
+
+def _process_single_upload(file: UploadFile, content: bytes) -> DatasetUploadResponse:
+    """Shared logic for processing a single file upload (used by both single and batch)."""
+    file_format = _detect_format(file.filename)
+    supported = {"csv", "json", "jsonl", "xlsx", "parquet"}
+    if file_format not in supported:
+        raise HTTPException(400, f"Unsupported format: {file_format}")
+
+    file_size = len(content)
+    max_size = settings.max_upload_size_mb * 1024 * 1024
+    if file_size > max_size:
+        raise HTTPException(413, f"File too large: {file.filename}")
+
+    df = read_file_bytes(content, file_format)
+    dataset_id = str(uuid.uuid4())
+
+    storage_path = Path(settings.local_storage_path)
+    storage_path.mkdir(parents=True, exist_ok=True)
+    file_path = storage_path / f"{dataset_id}.{file_format}"
+    file_path.write_bytes(content)
+
+    _datasets[dataset_id] = {
+        "id": dataset_id,
+        "name": file.filename,
+        "format": file_format,
+        "row_count": len(df),
+        "col_count": len(df.columns),
+        "file_size_bytes": file_size,
+        "status": "ready",
+        "file_path": str(file_path),
+    }
+    _dataframes[dataset_id] = df
+
+    report = profile_data(df, file_size)
+    _profiles[dataset_id] = report
+
+    return DatasetUploadResponse(
+        id=dataset_id,
+        name=file.filename,
+        format=file_format,
+        row_count=len(df),
+        col_count=len(df.columns),
+        file_size_bytes=file_size,
+        status="ready",
+    )
+
+
+@router.post("/upload-batch", response_model=BatchUploadResponse)
+async def upload_batch(files: List[UploadFile] = File(...)):
+    """Upload multiple files at once as a batch. All files get profiled automatically."""
+    if not files or len(files) == 0:
+        raise HTTPException(400, "No files provided")
+    if len(files) > 10:
+        raise HTTPException(400, "Maximum 10 files per batch")
+
+    batch_id = str(uuid.uuid4())
+    results = []
+    dataset_ids = []
+
+    for file in files:
+        if not file.filename:
+            continue
+        content = await file.read()
+        try:
+            result = _process_single_upload(file, content)
+            results.append(result)
+            dataset_ids.append(result.id)
+        except HTTPException:
+            # Skip failed files, continue with others
+            continue
+
+    if not results:
+        raise HTTPException(422, "All files failed to process")
+
+    _batches[batch_id] = dataset_ids
+
+    return BatchUploadResponse(batch_id=batch_id, datasets=results)
 
 
 @router.get("/{dataset_id}/profile", response_model=ProfileResponse)
@@ -205,3 +308,262 @@ async def export_dataset(dataset_id: str, format: str = "csv"):
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# LLM Training Data Validation
+# ---------------------------------------------------------------------------
+
+@router.post("/{dataset_id}/validate-llm", response_model=ValidationResultResponse)
+async def validate_llm(dataset_id: str, request: ValidateRequest = None):
+    """Validate a dataset against LLM training formats (ChatML, Alpaca, ShareGPT)."""
+    if dataset_id not in _dataframes:
+        raise HTTPException(404, "Dataset not found")
+
+    df = _dataframes[dataset_id]
+    req = request or ValidateRequest()
+
+    result = validate_llm_data(df, format_type=req.format_type, max_tokens=req.max_tokens)
+
+    return ValidationResultResponse(
+        format_type=result.format_type,
+        total_rows=result.total_rows,
+        valid_rows=result.valid_rows,
+        invalid_rows=result.invalid_rows,
+        warnings=result.warnings,
+        avg_tokens=result.avg_tokens,
+        max_tokens=result.max_tokens,
+        token_distribution=result.token_distribution,
+        errors=[
+            ValidationErrorSchema(
+                row_index=e.row_index,
+                field_path=e.field_path,
+                message=e.message,
+                severity=e.severity,
+                fixable=e.fixable,
+            )
+            for e in result.errors
+        ],
+    )
+
+
+@router.post("/{dataset_id}/fix-llm")
+async def fix_llm(dataset_id: str, format_type: str | None = None):
+    """Auto-fix common LLM training data format issues."""
+    if dataset_id not in _dataframes:
+        raise HTTPException(404, "Dataset not found")
+
+    df = _dataframes[dataset_id]
+
+    if format_type is None:
+        format_type = detect_format(df)
+    if format_type is None:
+        raise HTTPException(400, "Could not detect format. Specify format_type: chatml, alpaca, or sharegpt")
+
+    fixed_df = fix_llm_data(df, format_type)
+
+    # Store fixed DataFrame
+    fix_key = f"{dataset_id}_llm_fixed"
+    _dataframes[fix_key] = fixed_df
+
+    # Re-validate to show improvements
+    result = validate_llm_data(fixed_df, format_type=format_type)
+
+    return {
+        "status": "fixed",
+        "fix_key": fix_key,
+        "rows_fixed": len(fixed_df),
+        "valid_rows_after": result.valid_rows,
+        "invalid_rows_after": result.invalid_rows,
+        "remaining_errors": len(result.errors),
+    }
+
+
+# ---------------------------------------------------------------------------
+# RAG Chunking
+# ---------------------------------------------------------------------------
+
+@router.post("/{dataset_id}/chunk", response_model=ChunkResponse)
+async def chunk_dataset(dataset_id: str, request: ChunkRequest):
+    """Chunk text data for RAG pipelines."""
+    if dataset_id not in _dataframes:
+        raise HTTPException(404, "Dataset not found")
+
+    df = _dataframes[dataset_id]
+
+    # Auto-detect text column
+    text_col = request.text_column
+    if text_col is None:
+        # Look for common text column names
+        for candidate in ["text", "content", "body", "document", "description", "paragraph"]:
+            if candidate in df.columns:
+                text_col = candidate
+                break
+        if text_col is None:
+            # Use first string column
+            import polars as pl
+            for col in df.columns:
+                if df[col].dtype in (pl.Utf8, pl.String):
+                    text_col = col
+                    break
+        if text_col is None:
+            raise HTTPException(400, "No text column found. Specify text_column parameter.")
+
+    # Get source column
+    source_col = request.source_column
+    sources = None
+    if source_col and source_col in df.columns:
+        sources = df[source_col].to_list()
+    elif "source" in df.columns:
+        sources = df["source"].to_list()
+    elif "filename" in df.columns:
+        sources = df["filename"].to_list()
+
+    # Extract texts
+    texts = [str(v) if v is not None else "" for v in df[text_col].to_list()]
+
+    # Chunk
+    chunks = chunk_dataframe(
+        texts=texts,
+        sources=sources,
+        chunk_size=request.chunk_size,
+        overlap=request.overlap,
+        strategy=request.strategy,
+    )
+
+    if not chunks:
+        raise HTTPException(400, "No chunks generated — text data may be empty")
+
+    # Store as DataFrame
+    import polars as pl
+    chunk_df = pl.DataFrame(chunks)
+    chunk_key = f"{dataset_id}_chunks"
+    _dataframes[chunk_key] = chunk_df
+
+    # Stats
+    avg_size = int(sum(c["char_count"] for c in chunks) / len(chunks))
+    avg_tokens = int(sum(c["token_estimate"] for c in chunks) / len(chunks))
+    unique_sources = len(set(c["source"] for c in chunks))
+
+    return ChunkResponse(
+        total_chunks=len(chunks),
+        total_sources=unique_sources,
+        avg_chunk_size=avg_size,
+        avg_tokens=avg_tokens,
+        chunk_key=chunk_key,
+        preview_chunks=chunks[:10],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Quality Report (HTML/PDF)
+# ---------------------------------------------------------------------------
+
+@router.get("/{dataset_id}/report")
+async def quality_report(dataset_id: str):
+    """Generate a styled HTML quality report for a dataset."""
+    if dataset_id not in _profiles:
+        raise HTTPException(404, "Dataset not profiled")
+
+    report = _profiles[dataset_id]
+    info = _datasets.get(dataset_id, {})
+    name = info.get("name", "dataset")
+
+    # Build HTML report
+    html = _build_report_html(report, name, dataset_id)
+
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=html)
+
+
+def _build_report_html(report, name: str, dataset_id: str) -> str:
+    """Build a styled HTML quality report."""
+    score = report.health_score
+    score_color = "#10b981" if score >= 80 else "#f59e0b" if score >= 60 else "#ef4444"
+
+    issues_html = ""
+    for issue in report.issues:
+        sev_color = {"critical": "#ef4444", "warning": "#f59e0b", "info": "#3b82f6"}.get(issue.severity, "#6b7280")
+        issues_html += f'''
+        <tr>
+            <td><span style="color:{sev_color};font-weight:600;text-transform:uppercase;font-size:11px">{issue.severity}</span></td>
+            <td>{issue.category}</td>
+            <td>{issue.message}</td>
+            <td style="color:#6b7280;font-size:12px">{issue.suggestion}</td>
+        </tr>'''
+
+    columns_html = ""
+    for col in report.columns:
+        null_color = "#ef4444" if col.null_pct > 20 else "#f59e0b" if col.null_pct > 5 else "#10b981"
+        issues_count = len(col.issues)
+        columns_html += f'''
+        <tr>
+            <td style="font-family:monospace;font-weight:600">{col.name}</td>
+            <td><span style="background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:12px">{col.inferred_type}</span></td>
+            <td style="color:{null_color};font-weight:{'600' if col.null_pct > 5 else '400'}">{col.null_pct}%</td>
+            <td>{col.unique_pct}%</td>
+            <td>{issues_count if issues_count > 0 else '✅'}</td>
+        </tr>'''
+
+    return f'''<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Data Quality Report — {name}</title>
+<style>
+    body {{ font-family: Inter, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px; color: #111827; }}
+    h1 {{ font-size: 28px; margin-bottom: 4px; }}
+    h2 {{ font-size: 20px; margin-top: 32px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }}
+    .meta {{ color: #6b7280; font-size: 14px; margin-bottom: 32px; }}
+    .score {{ display: inline-flex; align-items: center; gap: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px 32px; margin-bottom: 24px; }}
+    .score-num {{ font-size: 48px; font-weight: 800; color: {score_color}; }}
+    .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }}
+    .stat {{ background: #f9fafb; border-radius: 8px; padding: 12px; text-align: center; }}
+    .stat-val {{ font-size: 20px; font-weight: 700; }}
+    .stat-label {{ font-size: 11px; color: #6b7280; margin-top: 2px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+    th {{ text-align: left; padding: 8px 12px; background: #f9fafb; font-weight: 600; font-size: 12px; color: #6b7280; border-bottom: 2px solid #e5e7eb; }}
+    td {{ padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }}
+    .footer {{ margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af; text-align: center; }}
+    @media print {{ body {{ padding: 20px; }} .no-print {{ display: none; }} }}
+</style>
+</head><body>
+    <div class="no-print" style="text-align:right;margin-bottom:16px">
+        <button onclick="window.print()" style="background:#4f46e5;color:white;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-size:14px">
+            🖨 Print / Save as PDF
+        </button>
+    </div>
+
+    <h1>📊 Data Quality Report</h1>
+    <div class="meta">{name} · Generated {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")} · ID: {dataset_id[:8]}</div>
+
+    <div class="score">
+        <div class="score-num">{score}</div>
+        <div>
+            <div style="font-size:14px;font-weight:600">Health Score</div>
+            <div style="font-size:12px;color:#6b7280">out of 100</div>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><div class="stat-val">{report.total_rows:,}</div><div class="stat-label">Total Rows</div></div>
+        <div class="stat"><div class="stat-val">{report.total_columns}</div><div class="stat-label">Columns</div></div>
+        <div class="stat"><div class="stat-val">{report.duplicate_pct}%</div><div class="stat-label">Duplicates</div></div>
+        <div class="stat"><div class="stat-val">{len(report.issues)}</div><div class="stat-label">Issues</div></div>
+    </div>
+
+    <h2>⚠️ Issues ({len(report.issues)})</h2>
+    <table>
+        <thead><tr><th>Severity</th><th>Category</th><th>Message</th><th>Suggestion</th></tr></thead>
+        <tbody>{issues_html if issues_html else '<tr><td colspan="4" style="text-align:center;color:#10b981;padding:20px">No issues found ✅</td></tr>'}</tbody>
+    </table>
+
+    <h2>📋 Column Details ({len(report.columns)})</h2>
+    <table>
+        <thead><tr><th>Column</th><th>Type</th><th>Missing</th><th>Unique</th><th>Issues</th></tr></thead>
+        <tbody>{columns_html}</tbody>
+    </table>
+
+    <div class="footer">
+        Generated by DataCleanr — AI-Powered Data Cleaning Platform
+    </div>
+</body></html>'''

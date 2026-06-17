@@ -267,6 +267,10 @@ def _detect_column_issues(series: pl.Series, profile: ColumnProfile, total: int)
     if profile.inferred_type == "string" and profile.unique_pct > 95 and total > 100:
         profile.issues.append("Very high cardinality — may be an ID field")
 
+    # Label inconsistency — detect case variations in low-cardinality string columns
+    if profile.inferred_type == "string" and 2 <= profile.unique_count <= 100 and total > 10:
+        _check_label_inconsistency(series, profile)
+
     # Format inconsistency for dates
     if profile.inferred_type == "date":
         _check_date_format_consistency(series, profile)
@@ -316,6 +320,44 @@ def _check_outliers(series: pl.Series, profile: ColumnProfile) -> None:
                 pct = round(outlier_count / len(series) * 100, 1)
                 profile.issues.append(f"{outlier_count} outlier values ({pct}%)")
                 profile.stats["outlier_count"] = outlier_count
+    except Exception:
+        pass
+
+
+def _check_label_inconsistency(series: pl.Series, profile: ColumnProfile) -> None:
+    """Detect case variations and whitespace issues in label-like columns."""
+    try:
+        values = series.drop_nulls().to_list()
+        if not values:
+            return
+
+        str_values = [str(v) for v in values]
+
+        # Check for case variations: "Positive" vs "positive" vs "POSITIVE"
+        lower_map: dict[str, set[str]] = {}
+        for v in str_values:
+            key = v.strip().lower()
+            if key not in lower_map:
+                lower_map[key] = set()
+            lower_map[key].add(v)
+
+        inconsistent_groups = {k: v for k, v in lower_map.items() if len(v) > 1}
+
+        if inconsistent_groups:
+            examples = []
+            for key, variants in list(inconsistent_groups.items())[:3]:
+                examples.append(f"'{' / '.join(sorted(variants))}'")
+            profile.issues.append(
+                f"Inconsistent label casing: {', '.join(examples)} — consider normalizing"
+            )
+            profile.stats["label_inconsistencies"] = len(inconsistent_groups)
+
+        # Check for leading/trailing whitespace
+        whitespace_count = sum(1 for v in str_values if v != v.strip())
+        if whitespace_count > 0:
+            pct = round(whitespace_count / len(str_values) * 100, 1)
+            profile.issues.append(f"{whitespace_count} values with extra whitespace ({pct}%)")
+
     except Exception:
         pass
 

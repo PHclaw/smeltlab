@@ -132,6 +132,80 @@ class ExportResponse(BaseModel):
     file_size_bytes: int
 
 
+# --- Batch ---
+
+class BatchUploadResponse(BaseModel):
+    batch_id: str
+    datasets: list[DatasetUploadResponse]
+
+
+class BatchApplyRecipeRequest(BaseModel):
+    recipe_id: str
+    dataset_ids: list[str]
+
+
+class BatchApplyResultSchema(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    status: str  # done | failed
+    rows_before: int = 0
+    rows_after: int = 0
+    total_changes: int = 0
+    error: str | None = None
+
+
+class BatchApplyRecipeResponse(BaseModel):
+    batch_id: str
+    recipe_id: str
+    results: list[BatchApplyResultSchema]
+
+
+# --- LLM Validation ---
+
+class ValidationErrorSchema(BaseModel):
+    row_index: int
+    field_path: str
+    message: str
+    severity: str = "error"
+    fixable: bool = False
+
+
+class ValidationResultResponse(BaseModel):
+    format_type: str
+    total_rows: int
+    valid_rows: int
+    invalid_rows: int
+    warnings: int
+    avg_tokens: int = 0
+    max_tokens: int = 0
+    token_distribution: dict[str, int] = {}
+    errors: list[ValidationErrorSchema] = []
+
+
+class ValidateRequest(BaseModel):
+    format_type: str | None = Field(None, description="chatml | alpaca | sharegpt. Auto-detected if null.")
+    max_tokens: int = Field(4096, description="Max tokens per sample for flagging")
+
+
+# --- Chunking ---
+
+class ChunkRequest(BaseModel):
+    text_column: str | None = Field(None, description="Column containing text to chunk. Auto-detect if null.")
+    source_column: str | None = Field(None, description="Column containing source identifiers.")
+    chunk_size: int = Field(512, description="Target chunk size in characters")
+    overlap: int = Field(64, description="Overlap between chunks in characters")
+    strategy: str = Field("paragraph", description="paragraph | heading | character")
+
+
+class ChunkResponse(BaseModel):
+    total_chunks: int
+    total_sources: int
+    avg_chunk_size: int
+    avg_tokens: int
+    chunk_key: str  # key to access chunked DataFrame
+    preview_chunks: list[dict[str, Any]]
+
+
 # --- Chat / Conversation ---
 
 class ChatRequest(BaseModel):
@@ -191,6 +265,7 @@ class CreateRecipeRequest(BaseModel):
     description: str = Field("", description="Recipe description")
     steps: list[RecipeStepSchema] = Field(..., description="Cleaning steps")
     tags: list[str] = Field(default_factory=list, description="Tags")
+    is_public: bool = Field(False, description="Make recipe public for community")
 
 
 class RecipeResponse(BaseModel):
@@ -201,6 +276,8 @@ class RecipeResponse(BaseModel):
     tags: list[str]
     usage_count: int
     created_at: str
+    is_public: bool = False
+    author: str = ""
 
 
 # --- General ---

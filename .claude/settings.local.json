@@ -12,7 +12,8 @@
       "Bash(npx tsc *)",
       "Bash(npx next *)",
       "Bash(netstat -ano)",
-      "Bash(taskkill *)"
+      "Bash(taskkill *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

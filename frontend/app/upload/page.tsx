@@ -7,7 +7,7 @@ import {
   Info, ArrowRight, Sparkles, ChevronDown, ChevronUp, Hash, Type,
   Calendar, Mail, Phone, Globe, ToggleLeft, BarChart3,
 } from 'lucide-react';
-import { uploadFile, getProfile, type ProfileResponse, type ColumnProfile } from '@/lib/api';
+import { uploadFile, uploadBatch, getProfile, getQualityReportUrl, type ProfileResponse, type ColumnProfile, type DatasetUploadResponse } from '@/lib/api';
 import { formatNumber, formatBytes, getHealthBg, getSeverityBadge } from '@/lib/utils';
 import { ColumnChart } from '@/components/ColumnChart';
 
@@ -30,41 +30,62 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function UploadPage() {
   const router = useRouter();
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [expandedCol, setExpandedCol] = useState<string | null>(null);
 
+  // Batch state
+  const [batchResults, setBatchResults] = useState<DatasetUploadResponse[] | null>(null);
+  const [selectedBatchDataset, setSelectedBatchDataset] = useState<string | null>(null);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const dropped = e.dataTransfer.files[0];
-    if (dropped) {
-      setFile(dropped);
+    const dropped = Array.from(e.dataTransfer.files);
+    if (dropped.length > 0) {
+      setFiles(dropped);
       setError(null);
       setProfile(null);
+      setBatchResults(null);
     }
   }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) {
-      setFile(selected);
+    const selected = Array.from(e.target.files || []);
+    if (selected.length > 0) {
+      setFiles(selected);
       setError(null);
       setProfile(null);
+      setBatchResults(null);
     }
   }, []);
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setUploading(true);
     setError(null);
     try {
-      const uploadResult = await uploadFile(file);
-      setDatasetId(uploadResult.id);
-      const profileData = await getProfile(uploadResult.id);
-      setProfile(profileData);
+      if (files.length === 1) {
+        // Single file — existing flow
+        const uploadResult = await uploadFile(files[0]);
+        setDatasetId(uploadResult.id);
+        const profileData = await getProfile(uploadResult.id);
+        setProfile(profileData);
+      } else {
+        // Multi-file batch upload
+        const batchResult = await uploadBatch(files);
+        setBatchResults(batchResult.datasets);
+        // Auto-select first dataset for detailed profile view
+        if (batchResult.datasets.length > 0) {
+          const first = batchResult.datasets[0];
+          setSelectedBatchDataset(first.id);
+          setDatasetId(first.id);
+          const profileData = await getProfile(first.id);
+          setProfile(profileData);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Upload failed. Please try again.');
     } finally {
@@ -98,35 +119,49 @@ export default function UploadPage() {
         {!profile && (
           <div className="text-center">
             <h1 className="text-3xl font-bold text-gray-900">Upload your dataset</h1>
-            <p className="mt-2 text-gray-600">Drop a file and get an instant AI-powered health report</p>
+            <p className="mt-2 text-gray-600">Drop one or more files — get an instant AI-powered health report for each</p>
 
             <div
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
               className={`mt-8 rounded-2xl border-2 border-dashed p-12 transition-colors ${
-                file
+                files.length > 0
                   ? 'border-primary-400 bg-primary-50'
                   : 'border-gray-300 bg-white hover:border-primary-400 hover:bg-primary-50'
               }`}
             >
-              {file ? (
+              {files.length > 0 ? (
                 <div className="flex flex-col items-center">
                   <FileSpreadsheet className="h-12 w-12 text-primary-500" />
-                  <p className="mt-4 text-lg font-medium text-gray-900">{file.name}</p>
-                  <p className="mt-1 text-sm text-gray-500">{formatBytes(file.size)}</p>
-                  <button onClick={() => { setFile(null); setError(null); }} className="mt-4 text-sm text-gray-500 hover:text-gray-700">
-                    Choose a different file
+                  <p className="mt-4 text-lg font-medium text-gray-900">
+                    {files.length === 1 ? files[0].name : `${files.length} files selected`}
+                  </p>
+                  {files.length > 1 && (
+                    <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                      {files.map((f, i) => (
+                        <span key={i} className="rounded-full bg-white/80 border border-gray-200 px-2.5 py-0.5 text-xs text-gray-600">
+                          {f.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-2 text-sm text-gray-500">
+                    {files.length === 1 ? formatBytes(files[0].size) : `${formatBytes(files.reduce((s, f) => s + f.size, 0))} total`}
+                  </p>
+                  <button onClick={() => { setFiles([]); setError(null); setBatchResults(null); }} className="mt-4 text-sm text-gray-500 hover:text-gray-700">
+                    Choose different files
                   </button>
                 </div>
               ) : (
                 <div className="flex flex-col items-center">
                   <Upload className="h-12 w-12 text-gray-400" />
-                  <p className="mt-4 text-lg font-medium text-gray-700">Drag & drop your file here</p>
-                  <p className="mt-1 text-sm text-gray-500">or click to browse</p>
-                  <p className="mt-3 text-xs text-gray-400">CSV, JSON, JSONL, Excel, Parquet — up to 100MB</p>
+                  <p className="mt-4 text-lg font-medium text-gray-700">Drag & drop your files here</p>
+                  <p className="mt-1 text-sm text-gray-500">or click to browse (multiple files supported)</p>
+                  <p className="mt-3 text-xs text-gray-400">CSV, JSON, JSONL, Excel, Parquet, TXT, Markdown — up to 100MB each, 10 files max</p>
                   <input
                     type="file"
-                    accept=".csv,.json,.jsonl,.ndjson,.xlsx,.xls,.parquet"
+                    multiple
+                    accept=".csv,.json,.jsonl,.ndjson,.xlsx,.xls,.parquet,.txt,.md"
                     onChange={handleFileSelect}
                     className="absolute inset-0 cursor-pointer opacity-0"
                     style={{ position: 'relative' }}
@@ -142,11 +177,18 @@ export default function UploadPage() {
               </div>
             )}
 
-            {file && !uploading && (
-              <button onClick={handleUpload} className="btn-primary mt-8 text-base px-8 py-3">
-                <Sparkles className="mr-2 h-5 w-5" />
-                Analyze & Profile Data
-              </button>
+            {files.length > 0 && !uploading && (
+              <>
+                {files.some((f) => f.size > 50 * 1024 * 1024) && (
+                  <p className="mt-4 text-sm text-amber-600 font-medium">
+                    ⚡ Large file detected (&gt;50MB) — will use streaming mode for processing. This may take a moment.
+                  </p>
+                )}
+                <button onClick={handleUpload} className="btn-primary mt-4 text-base px-8 py-3">
+                  <Sparkles className="mr-2 h-5 w-5" />
+                  {files.length === 1 ? 'Analyze & Profile Data' : `Analyze ${files.length} Files`}
+                </button>
+              </>
             )}
 
             {uploading && (
@@ -161,6 +203,45 @@ export default function UploadPage() {
         {/* Profile Results */}
         {profile && (
           <div className="space-y-6">
+            {/* Batch file selector */}
+            {batchResults && batchResults.length > 1 && (
+              <div className="card">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                  Batch Upload — {batchResults.length} files processed
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {batchResults.map((ds) => (
+                    <button
+                      key={ds.id}
+                      onClick={async () => {
+                        setSelectedBatchDataset(ds.id);
+                        setDatasetId(ds.id);
+                        const p = await getProfile(ds.id);
+                        setProfile(p);
+                      }}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all ${
+                        selectedBatchDataset === ds.id
+                          ? 'border-primary-500 bg-primary-50 text-primary-700'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-primary-300'
+                      }`}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span className="font-medium truncate max-w-[120px]">{ds.name}</span>
+                      <span className="text-xs text-gray-400">
+                        {formatNumber(ds.row_count)} rows
+                      </span>
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${
+                        selectedBatchDataset === ds.id ? 'text-primary-500' : 'text-emerald-500'
+                      }`} />
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Click a file to view its profile. Start cleaning any file, then save as Recipe to apply to all others.
+                </p>
+              </div>
+            )}
+
             {/* Health Score + Quick Stats */}
             <div className="card">
               <div className="flex items-start gap-8">
@@ -174,7 +255,7 @@ export default function UploadPage() {
                 <div className="flex-1 min-w-0">
                   <h2 className="text-xl font-bold text-gray-900">Data Health Report</h2>
                   <p className="mt-1 text-sm text-gray-500 truncate">
-                    {file?.name} — {formatBytes(profile.file_size_bytes)}
+                    {batchResults?.find(d => d.id === datasetId)?.name || files[0]?.name} — {formatBytes(profile.file_size_bytes)}
                   </p>
 
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -251,9 +332,26 @@ export default function UploadPage() {
                 Start Cleaning
                 <ArrowRight className="ml-2 h-5 w-5" />
               </button>
-              <p className="mt-3 text-sm text-gray-500">
-                Describe what you want to clean in plain English, or use preset actions
-              </p>
+              <div className="mt-3 flex items-center justify-center gap-3">
+                <p className="text-sm text-gray-500">
+                  Describe what you want to clean in plain English, or use preset actions
+                </p>
+              </div>
+              {datasetId && (
+                <a
+                  href={getQualityReportUrl(datasetId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-2 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  📄 Download Quality Report (PDF)
+                </a>
+              )}
+              {batchResults && batchResults.length > 1 && (
+                <p className="mt-2 text-xs text-primary-600 font-medium">
+                  💡 After cleaning, save as Recipe to apply to the other {batchResults.length - 1} file{batchResults.length > 2 ? 's' : ''} in this batch
+                </p>
+              )}
             </div>
           </div>
         )}

@@ -60,6 +60,7 @@ class Conversation:
     last_result: CleanResult | None = None
     last_plan_before_execute: CleanPlan | None = None  # plan that was last executed
     execution_count: int = 0
+    version_history: list[dict[str, Any]] = field(default_factory=list)  # [{version, df_key, label, rows, timestamp}]
 
 
 # In-memory stores
@@ -488,6 +489,17 @@ async def execute_conversation_plan(
     conversation.current_df_key = new_key
     conversation.last_result = result
 
+    # Record version in history
+    conversation.version_history.append({
+        "version": conversation.execution_count,
+        "df_key": new_key,
+        "label": f"v{conversation.execution_count}: {', '.join(s.operation for s in plan.steps)}",
+        "rows": len(result.df_clean),
+        "rows_removed": result.rows_before - result.rows_after,
+        "changes": result.total_changes,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    })
+
     # Clear current plan after execution
     conversation.current_plan = None
 
@@ -635,3 +647,55 @@ async def apply_selective_changes(
     ))
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Version history & rollback
+# ---------------------------------------------------------------------------
+
+def get_version_history(conversation: Conversation) -> list[dict[str, Any]]:
+    """Get the version history for a conversation."""
+    return conversation.version_history
+
+
+def rollback_version(
+    conversation: Conversation,
+    df_store: dict[str, Any],
+    target_version: int,
+) -> dict[str, Any]:
+    """Rollback to a specific version. target_version=0 = original dataset."""
+    if target_version == 0:
+        conversation.current_df_key = conversation.dataset_id
+        conversation.current_plan = None
+        conversation.last_result = None
+        conversation.last_plan_before_execute = None
+        original_df = df_store.get(conversation.dataset_id)
+        rows = len(original_df) if original_df else 0
+        conversation.messages.append(ChatMessage(
+            role="assistant",
+            content=f"Rolled back to original dataset ({rows} rows). All changes undone.",
+            response_type="confirm",
+        ))
+        return {"version": 0, "label": "Original", "rows": rows}
+
+    target = None
+    for v in conversation.version_history:
+        if v["version"] == target_version:
+            target = v
+            break
+    if not target:
+        raise ValueError(f"Version {target_version} not found")
+    if target["df_key"] not in df_store:
+        raise ValueError(f"DataFrame for version {target_version} not available")
+
+    conversation.current_df_key = target["df_key"]
+    conversation.current_plan = None
+    conversation.last_result = None
+    conversation.last_plan_before_execute = None
+    conversation.version_history = [v for v in conversation.version_history if v["version"] <= target_version]
+    conversation.messages.append(ChatMessage(
+        role="assistant",
+        content=f"Rolled back to {target['label']} ({target['rows']} rows). Later versions discarded.",
+        response_type="confirm",
+    ))
+    return {"version": target_version, "label": target["label"], "rows": target["rows"]}

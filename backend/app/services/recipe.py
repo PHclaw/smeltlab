@@ -45,6 +45,8 @@ class Recipe:
     tags: list[str] = field(default_factory=list)
     usage_count: int = 0
     created_at: str = ""
+    is_public: bool = False
+    author: str = ""  # user_id or "system"
 
     def __post_init__(self):
         if not self.created_at:
@@ -64,6 +66,8 @@ def create_recipe(
     steps: list[dict[str, Any]],
     description: str = "",
     tags: list[str] | None = None,
+    is_public: bool = False,
+    author: str = "",
 ) -> Recipe:
     """Create a new recipe."""
     recipe_id = str(uuid.uuid4())
@@ -83,6 +87,8 @@ def create_recipe(
         description=description,
         steps=recipe_steps,
         tags=tags or [],
+        is_public=is_public,
+        author=author,
     )
     _recipes[recipe_id] = recipe
     return recipe
@@ -96,6 +102,37 @@ def get_recipe(recipe_id: str) -> Recipe | None:
 def list_recipes() -> list[Recipe]:
     """List all recipes, sorted by creation date (newest first)."""
     return sorted(_recipes.values(), key=lambda r: r.created_at, reverse=True)
+
+
+def list_community_recipes(query: str = "", tag: str = "") -> list[Recipe]:
+    """List public community recipes, optionally filtered."""
+    results = [r for r in _recipes.values() if r.is_public]
+
+    if query:
+        q = query.lower()
+        results = [r for r in results if q in r.name.lower() or q in r.description.lower()]
+
+    if tag:
+        results = [r for r in results if tag in r.tags]
+
+    # Sort by usage_count (most popular first), then by date
+    return sorted(results, key=lambda r: (-r.usage_count, r.created_at))
+
+
+def share_recipe(recipe_id: str) -> Recipe | None:
+    """Make a recipe public."""
+    recipe = _recipes.get(recipe_id)
+    if recipe:
+        recipe.is_public = True
+    return recipe
+
+
+def unshare_recipe(recipe_id: str) -> Recipe | None:
+    """Make a recipe private."""
+    recipe = _recipes.get(recipe_id)
+    if recipe:
+        recipe.is_public = False
+    return recipe
 
 
 def delete_recipe(recipe_id: str) -> bool:

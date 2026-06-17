@@ -14,6 +14,27 @@ export interface DatasetUploadResponse {
   status: string;
 }
 
+export interface BatchUploadResponse {
+  batch_id: string;
+  datasets: DatasetUploadResponse[];
+}
+
+export interface BatchApplyResult {
+  dataset_id: string;
+  dataset_name: string;
+  status: string;
+  rows_before: number;
+  rows_after: number;
+  total_changes: number;
+  error: string | null;
+}
+
+export interface BatchApplyRecipeResponse {
+  batch_id: string;
+  recipe_id: string;
+  results: BatchApplyResult[];
+}
+
 export interface ColumnProfile {
   name: string;
   inferred_type: string;
@@ -144,6 +165,30 @@ export interface Recipe {
   tags: string[];
   usage_count: number;
   created_at: string;
+  is_public: boolean;
+  author: string;
+}
+
+// --- LLM Validation ---
+
+export interface LLMValidationError {
+  row_index: number;
+  field_path: string;
+  message: string;
+  severity: string;
+  fixable: boolean;
+}
+
+export interface LLMValidationResult {
+  format_type: string;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  warnings: number;
+  avg_tokens: number;
+  max_tokens: number;
+  token_distribution: Record<string, number>;
+  errors: LLMValidationError[];
 }
 
 // --- API functions ---
@@ -450,6 +495,25 @@ export async function deleteRecipe(recipeId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete recipe');
 }
 
+export async function shareRecipe(recipeId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/recipes/${recipeId}/share`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to share recipe');
+}
+
+export async function unshareRecipe(recipeId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/recipes/${recipeId}/unshare`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to unshare recipe');
+}
+
+export async function searchCommunityRecipes(query: string = '', tag: string = ''): Promise<Recipe[]> {
+  const params = new URLSearchParams();
+  if (query) params.set('query', query);
+  if (tag) params.set('tag', tag);
+  const res = await fetch(`${API_BASE}/recipes/community/search?${params}`);
+  if (!res.ok) throw new Error('Failed to search community recipes');
+  return res.json();
+}
+
 export async function applyRecipeToDataset(
   recipeId: string,
   datasetId: string
@@ -472,4 +536,157 @@ export async function applyRecipeToDataset(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// --- LLM Validation API ---
+
+export async function validateLLMData(
+  datasetId: string,
+  formatType?: string
+): Promise<LLMValidationResult> {
+  const res = await fetch(`${API_BASE}/datasets/${datasetId}/validate-llm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format_type: formatType ?? null }),
+  });
+  if (!res.ok) throw new Error('LLM validation failed');
+  return res.json();
+}
+
+export async function fixLLMData(
+  datasetId: string,
+  formatType?: string
+): Promise<{ status: string; fix_key: string; valid_rows_after: number; invalid_rows_after: number }> {
+  const params = formatType ? `?format_type=${formatType}` : '';
+  const res = await fetch(`${API_BASE}/datasets/${datasetId}/fix-llm${params}`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('LLM fix failed');
+  return res.json();
+}
+
+export interface ChunkResult {
+  total_chunks: number;
+  total_sources: number;
+  avg_chunk_size: number;
+  avg_tokens: number;
+  chunk_key: string;
+  preview_chunks: Record<string, any>[];
+}
+
+export async function chunkDataset(
+  datasetId: string,
+  options: {
+    textColumn?: string;
+    sourceColumn?: string;
+    chunkSize?: number;
+    overlap?: number;
+    strategy?: string;
+  } = {}
+): Promise<ChunkResult> {
+  const res = await fetch(`${API_BASE}/datasets/${datasetId}/chunk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text_column: options.textColumn ?? null,
+      source_column: options.sourceColumn ?? null,
+      chunk_size: options.chunkSize ?? 512,
+      overlap: options.overlap ?? 64,
+      strategy: options.strategy ?? 'paragraph',
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Chunking failed' }));
+    throw new Error(err.detail || 'Chunking failed');
+  }
+  return res.json();
+}
+
+export async function uploadBatch(files: File[]): Promise<BatchUploadResponse> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
+  }
+  const res = await fetch(`${API_BASE}/datasets/upload-batch`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) throw new Error('Batch upload failed');
+  return res.json();
+}
+
+export async function batchApplyRecipe(
+  recipeId: string,
+  datasetIds: string[]
+): Promise<BatchApplyRecipeResponse> {
+  const res = await fetch(`${API_BASE}/recipes/batch-apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe_id: recipeId, dataset_ids: datasetIds }),
+  });
+  if (!res.ok) throw new Error('Batch apply failed');
+  return res.json();
+}
+
+export function getQualityReportUrl(datasetId: string): string {
+  return `${API_BASE}/datasets/${datasetId}/report`;
+}
+
+// --- Version History ---
+
+export interface VersionInfo {
+  version: number;
+  label: string;
+  rows: number;
+  timestamp: string;
+  rows_removed?: number;
+  changes?: number;
+}
+
+export interface VersionHistory {
+  conversation_id: string;
+  current_version: number;
+  versions: VersionInfo[];
+}
+
+export async function getVersionHistory(conversationId: string): Promise<VersionHistory> {
+  const res = await fetch(`${API_BASE}/clean/chat/${conversationId}/history`);
+  if (!res.ok) throw new Error('Failed to fetch history');
+  return res.json();
+}
+
+export async function rollbackVersion(
+  conversationId: string,
+  targetVersion: number
+): Promise<{ message: string }> {
+  const res = await fetch(
+    `${API_BASE}/clean/chat/${conversationId}/rollback?target_version=${targetVersion}`,
+    { method: 'POST' }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Rollback failed' }));
+    throw new Error(err.detail || 'Rollback failed');
+  }
+  return res.json();
+}
+
+export interface ColumnDrift {
+  column: string;
+  col_type: string;
+  drift_score: number;
+  severity: string;
+  details: Record<string, any>;
+}
+
+export interface DriftReport {
+  conversation_id: string;
+  total_columns: number;
+  drifted_columns: number;
+  columns: ColumnDrift[];
+}
+
+export async function getDriftReport(conversationId: string): Promise<DriftReport> {
+  const res = await fetch(`${API_BASE}/clean/chat/${conversationId}/drift`);
+  if (!res.ok) throw new Error('Failed to get drift report');
+  return res.json();
 }

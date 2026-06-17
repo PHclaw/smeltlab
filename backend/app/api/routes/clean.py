@@ -39,7 +39,10 @@ from app.services.conversation import (
     execute_conversation_plan,
     get_conversation,
     get_or_create_conversation,
+    get_version_history,
+    rollback_version,
 )
+from app.services.drift import detect_drift
 
 router = APIRouter()
 
@@ -559,3 +562,73 @@ async def apply_selective(conversation_id: str, request: SelectiveApplyRequest):
         steps_rejected=request.rejected_step_ids,
         result=result_response,
     )
+
+
+@router.get("/chat/{conversation_id}/history")
+async def get_history(conversation_id: str):
+    """Get version history for a conversation."""
+    conversation = get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(404, "Conversation not found")
+
+    history = get_version_history(conversation)
+    # Prepend original version
+    versions = [{"version": 0, "label": "Original", "rows": len(_dataframes.get(conversation.dataset_id, [])), "timestamp": ""}]
+    versions.extend(history)
+
+    return {
+        "conversation_id": conversation_id,
+        "current_version": conversation.execution_count,
+        "versions": versions,
+    }
+
+
+@router.post("/chat/{conversation_id}/rollback")
+async def rollback(conversation_id: str, target_version: int):
+    """Rollback to a specific version."""
+    conversation = get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(404, "Conversation not found")
+
+    try:
+        result = rollback_version(conversation, _dataframes, target_version)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return {
+        "conversation_id": conversation_id,
+        "rolled_back_to": result,
+        "message": f"Rolled back to {result['label']}",
+    }
+
+
+@router.get("/chat/{conversation_id}/drift")
+async def get_drift(conversation_id: str):
+    """Get drift report comparing original data to current cleaned data."""
+    conversation = get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(404, "Conversation not found")
+
+    df_before = _dataframes.get(conversation.dataset_id)
+    df_after = _dataframes.get(conversation.current_df_key)
+
+    if df_before is None or df_after is None:
+        raise HTTPException(400, "Cannot compare — missing data")
+
+    report = detect_drift(df_before, df_after)
+
+    return {
+        "conversation_id": conversation_id,
+        "total_columns": report.total_columns,
+        "drifted_columns": report.drifted_columns,
+        "columns": [
+            {
+                "column": d.column,
+                "col_type": d.col_type,
+                "drift_score": d.drift_score,
+                "severity": d.severity,
+                "details": d.details,
+            }
+            for d in report.drift_results
+        ],
+    }

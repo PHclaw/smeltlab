@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.api.routes import datasets, clean, health, recipes, auth, projects
+from app.api.routes import settings as settings_routes
 
 settings = get_settings()
 
@@ -29,6 +30,7 @@ app.include_router(datasets.router, prefix="/api/datasets", tags=["datasets"])
 app.include_router(clean.router, prefix="/api/clean", tags=["clean"])
 app.include_router(recipes.router, prefix="/api/recipes", tags=["recipes"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"])
 
 
 @app.get("/")

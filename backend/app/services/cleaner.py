@@ -432,6 +432,167 @@ def apply_pii_mask(
 
 
 # Map of preset operation names to functions
+# ---------------------------------------------------------------------------
+# Label Normalization
+# ---------------------------------------------------------------------------
+
+def apply_label_normalize(
+    df: pl.DataFrame, config: dict[str, Any] | None = None
+) -> tuple[pl.DataFrame, list[ChangeRecord]]:
+    """Normalize labels in categorical columns — unify case, trim, map synonyms."""
+    config = config or {}
+    columns = config.get("columns")
+    method = config.get("method", "lowercase")  # lowercase | titlecase | custom_mapping
+
+    # Find candidate label columns (string columns with low-to-moderate cardinality)
+    if columns:
+        target_cols = [c for c in columns if c in df.columns]
+    else:
+        target_cols = []
+        for col in df.columns:
+            if df[col].dtype in (pl.Utf8, pl.String):
+                unique_pct = df[col].n_unique() / max(len(df), 1) * 100
+                # Label-like: 2-50 unique values, < 5% unique
+                if 2 <= df[col].n_unique() <= 100 and unique_pct < 5:
+                    target_cols.append(col)
+
+    df_clean = df.clone()
+    changes: list[ChangeRecord] = []
+
+    for col in target_cols:
+        if col not in df_clean.columns:
+            continue
+
+        before_values = df_clean[col].to_list()
+        after_values = []
+
+        for val in before_values:
+            if val is None:
+                after_values.append(None)
+                continue
+
+            original = str(val)
+            normalized = original.strip()
+
+            if method == "lowercase":
+                normalized = normalized.lower()
+            elif method == "titlecase":
+                normalized = normalized.title()
+            elif method == "custom_mapping":
+                mapping = config.get("mapping", {})
+                normalized = mapping.get(normalized, mapping.get(normalized.lower(), normalized))
+
+            if normalized != original:
+                changes.append(ChangeRecord(
+                    row_index=len(after_values), column=col,
+                    before=original, after=normalized,
+                    operation="label_normalize", step_id="label_normalize",
+                ))
+
+            after_values.append(normalized)
+
+        df_clean = df_clean.with_columns(
+            pl.Series(col, after_values, dtype=pl.Utf8)
+        )
+
+    return df_clean, changes
+
+
+# ---------------------------------------------------------------------------
+# LLM Format Validation & Fix
+# ---------------------------------------------------------------------------
+
+def apply_llm_validate(
+    df: pl.DataFrame, config: dict[str, Any] | None = None
+) -> tuple[pl.DataFrame, list[ChangeRecord]]:
+    """Validate and auto-fix LLM training data format issues."""
+    from app.services.validator import validate_dataset, fix_dataset, detect_format
+
+    config = config or {}
+    format_type = config.get("format_type")  # chatml | alpaca | sharegpt | None (auto-detect)
+
+    if format_type is None:
+        format_type = detect_format(df)
+    if format_type is None:
+        # Can't detect format — return unchanged with a warning
+        return df, [ChangeRecord(
+            row_index=0, column="__meta__", before="unknown",
+            after="could not detect format", operation="llm_validate", step_id="llm_validate",
+        )]
+
+    # First validate
+    pre_result = validate_dataset(df, format_type=format_type)
+
+    # Then fix
+    fixed_df = fix_dataset(df, format_type)
+
+    # Re-validate to measure improvements
+    post_result = validate_dataset(fixed_df, format_type=format_type)
+
+    changes: list[ChangeRecord] = []
+
+    # Record what was fixed
+    fixed_count = post_result.valid_rows - pre_result.valid_rows
+    if fixed_count > 0:
+        changes.append(ChangeRecord(
+            row_index=0, column="__meta__",
+            before=f"{pre_result.invalid_rows} invalid rows",
+            after=f"{post_result.invalid_rows} invalid rows ({fixed_count} fixed)",
+            operation="llm_validate", step_id="llm_validate",
+        ))
+
+    # Record remaining errors
+    for err in post_result.errors[:50]:
+        changes.append(ChangeRecord(
+            row_index=err.row_index, column=err.field_path,
+            before="invalid", after=err.message,
+            operation="llm_validate", step_id="llm_validate",
+        ))
+
+    # If no improvements and no errors, just report validation status
+    if not changes:
+        changes.append(ChangeRecord(
+            row_index=0, column="__meta__",
+            before=f"{pre_result.valid_rows}/{pre_result.total_rows} valid",
+            after="all rows valid" if post_result.invalid_rows == 0 else f"{post_result.valid_rows}/{post_result.total_rows} valid",
+            operation="llm_validate", step_id="llm_validate",
+        ))
+
+    return fixed_df, changes
+
+
+# Map of preset operation names to functions
+def apply_sample(
+    df: pl.DataFrame, config: dict[str, Any] | None = None
+) -> tuple[pl.DataFrame, list[ChangeRecord]]:
+    """Sample data using various strategies."""
+    from app.services.sampler import sample_data
+
+    config = config or {}
+    strategy = config.get("strategy", "random")
+    n = config.get("n")
+    fraction = config.get("fraction")
+    stratify_column = config.get("stratify_column")
+
+    original_count = len(df)
+    df_sampled = sample_data(
+        df,
+        strategy=strategy,
+        n=n,
+        fraction=fraction,
+        stratify_column=stratify_column,
+    )
+
+    removed = original_count - len(df_sampled)
+    changes = [ChangeRecord(
+        row_index=i, column="__row__", before="sampled_out",
+        after="removed", operation="sample", step_id="sample",
+    ) for i in range(removed)]
+
+    return df_sampled, changes
+
+
+# Map of preset operation names to functions
 PRESET_OPERATIONS = {
     "dedup": apply_dedup,
     "pii_mask": apply_pii_mask,
@@ -439,6 +600,9 @@ PRESET_OPERATIONS = {
     "outlier": apply_outlier_filter,
     "text_clean": apply_text_clean,
     "date_standardize": apply_date_standardize,
+    "llm_validate": apply_llm_validate,
+    "label_normalize": apply_label_normalize,
+    "sample": apply_sample,
 }
 
 
@@ -471,6 +635,9 @@ _CLEAN_PLAN_PROMPT = """You are an expert data engineer. Analyze the dataset and
 - "outlier": Filter outlier values. Config: {{"columns": [...], "method": "iqr", "threshold": 1.5}}
 - "text_clean": Clean text fields. Config: {{"columns": [...], "operations": ["strip","normalize_space","lowercase","remove_special"]}}
 - "date_standardize": Standardize date formats. Config: {{"columns": [...], "target_format": "%Y-%m-%d"}}
+- "label_normalize": Normalize inconsistent labels (case variations, whitespace). Config: {{"columns": [...], "method": "lowercase"|"titlecase"}}
+- "llm_validate": Validate and fix LLM training data format. Config: {{"format_type": "chatml"|"alpaca"|"sharegpt"|null}}
+- "sample": Sample data. Config: {{"strategy": "random"|"stratified"|"head"|"tail"|"diverse", "n": <int>, "fraction": <float>, "stratify_column": "<col>"}}
 
 ## Output Format
 Respond with a JSON object:

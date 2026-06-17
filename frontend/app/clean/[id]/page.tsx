@@ -5,12 +5,13 @@ import { useParams } from 'next/navigation';
 import {
   Sparkles, Loader2, CheckCircle2, XCircle, ArrowRight,
   Download, RotateCcw, Zap, Shield, Calendar, Filter, Type,
-  MessageSquare, Play, Send, ChevronDown, ChevronUp, Tag,
+  MessageSquare, Play, Send, ChevronDown, ChevronUp, Tag, BarChart3,
 } from 'lucide-react';
 import {
   getProfile, sendChatMessage, executeChatPlan, getChatExportUrl, applySelective, createRecipe,
+  getVersionHistory, rollbackVersion, getDriftReport,
   type ProfileResponse, type ChatResponse, type ChatPlanStep,
-  type CleanResultResponse, type ChangeRecord, type RecipeStep,
+  type CleanResultResponse, type ChangeRecord, type RecipeStep, type VersionInfo, type DriftReport,
 } from '@/lib/api';
 import { formatNumber, formatDuration } from '@/lib/utils';
 import { DiffReview } from '@/components/DiffReview';
@@ -22,6 +23,9 @@ const QUICK_ACTIONS = [
   { label: 'Filter Outliers', message: 'Remove statistical outliers from numeric columns' },
   { label: 'Handle Missing', message: 'Drop rows that have missing values' },
   { label: 'Clean Text', message: 'Strip whitespace and normalize text columns' },
+  { label: 'Fix Labels', message: 'Normalize label columns — fix inconsistent casing like Positive/positive/POSITIVE' },
+  { label: 'Smart Sample', message: 'Take a stratified sample of 10000 rows preserving class distribution' },
+  { label: 'LLM Format Fix', message: 'Validate and fix LLM training data format (ChatML/Alpaca/ShareGPT)' },
 ];
 
 const OP_ICONS: Record<string, typeof Shield> = {
@@ -60,6 +64,9 @@ export default function CleanPage() {
   const [disabledSteps, setDisabledSteps] = useState<Set<string>>(new Set());
   const [isExecuting, setIsExecuting] = useState(false);
   const [lastJobId, setLastJobId] = useState<string | null>(null);
+  const [versions, setVersions] = useState<VersionInfo[]>([]);
+  const [currentVersion, setCurrentVersion] = useState(0);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +182,15 @@ export default function CleanPage() {
       if (response.result) {
         setLastJobId(response.result.job_id);
       }
+
+      // Fetch updated version history
+      if (conversationId || response.conversation_id) {
+        try {
+          const history = await getVersionHistory(response.conversation_id || conversationId!);
+          setVersions(history.versions);
+          setCurrentVersion(history.current_version);
+        } catch { /* ignore */ }
+      }
     } catch (err: any) {
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
@@ -202,6 +218,33 @@ export default function CleanPage() {
   const handleSuggestion = (suggestion: string) => {
     setInputText(suggestion);
     inputRef.current?.focus();
+  };
+
+  const handleRollback = async (targetVersion: number) => {
+    if (!conversationId) return;
+    try {
+      await rollbackVersion(conversationId, targetVersion);
+      // Add rollback message to chat
+      setMessages((prev) => [...prev, {
+        id: `rollback-${Date.now()}`,
+        role: 'assistant',
+        content: targetVersion === 0
+          ? `Rolled back to original dataset. All cleaning changes have been undone.`
+          : `Rolled back to version ${targetVersion}. Later versions have been discarded.`,
+      }]);
+      // Refresh history
+      const history = await getVersionHistory(conversationId);
+      setVersions(history.versions);
+      setCurrentVersion(history.current_version);
+      setCurrentPlan(null);
+    } catch (err: any) {
+      setMessages((prev) => [...prev, {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        error: err.message || 'Rollback failed',
+      }]);
+    }
   };
 
   if (loading) {
@@ -267,6 +310,68 @@ export default function CleanPage() {
               <span className="badge-critical text-xs">
                 {profile.issues.filter((i) => i.severity === 'critical').length} critical
               </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Version timeline */}
+      {versions.length > 1 && (
+        <div className="mx-auto w-full max-w-4xl px-6 pt-2 flex-shrink-0">
+          <div className="rounded-lg bg-white border border-gray-200 px-4 py-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowTimeline(!showTimeline)}
+                className="text-xs font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                🕐 History ({versions.length} versions)
+                {showTimeline ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+              <div className="flex-1 flex items-center gap-1 overflow-x-auto">
+                {versions.map((v) => (
+                  <button
+                    key={v.version}
+                    onClick={() => {
+                      if (v.version !== currentVersion) handleRollback(v.version);
+                    }}
+                    className={`flex-shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-all ${
+                      v.version === currentVersion
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-primary-100 hover:text-primary-700'
+                    }`}
+                    title={v.label}
+                  >
+                    {v.version === 0 ? 'Original' : `v${v.version}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {showTimeline && (
+              <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+                {versions.map((v) => (
+                  <div
+                    key={v.version}
+                    className={`flex items-center justify-between text-xs px-2 py-1 rounded ${
+                      v.version === currentVersion ? 'bg-primary-50' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`font-medium ${v.version === currentVersion ? 'text-primary-700' : 'text-gray-700'}`}>
+                        {v.version === 0 ? 'Original' : `v${v.version}`}
+                      </span>
+                      <span className="text-gray-400">{formatNumber(v.rows)} rows</span>
+                    </div>
+                    {v.version !== currentVersion && (
+                      <button
+                        onClick={() => handleRollback(v.version)}
+                        className="text-primary-600 hover:text-primary-700 text-[10px] font-medium"
+                      >
+                        Rollback
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -604,6 +709,9 @@ function ExecutionResult({
   const [recipeTags, setRecipeTags] = useState('');
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [recipeSaved, setRecipeSaved] = useState(false);
+  const [driftReport, setDriftReport] = useState<DriftReport | null>(null);
+  const [showDrift, setShowDrift] = useState(false);
+  const [loadingDrift, setLoadingDrift] = useState(false);
 
   const toggleRejectStep = (stepId: string) => {
     setRejectedSteps((prev) => {
@@ -771,6 +879,71 @@ function ExecutionResult({
 
       {recipeSaved && (
         <p className="text-xs text-emerald-600 font-medium">✅ Recipe saved successfully!</p>
+      )}
+
+      {/* Drift detection */}
+      {conversationId && (
+        <div>
+          <button
+            onClick={async () => {
+              if (showDrift) { setShowDrift(false); return; }
+              setLoadingDrift(true);
+              try {
+                const report = await getDriftReport(conversationId);
+                setDriftReport(report);
+                setShowDrift(true);
+              } catch { /* ignore */ }
+              finally { setLoadingDrift(false); }
+            }}
+            className="inline-flex items-center gap-1.5 text-xs text-primary-600 hover:text-primary-700 font-medium"
+          >
+            {loadingDrift ? <Loader2 className="h-3 w-3 animate-spin" /> : <BarChart3 className="h-3 w-3" />}
+            {showDrift ? 'Hide' : 'Check'} Distribution Drift
+          </button>
+
+          {showDrift && driftReport && (
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-600">
+                  {driftReport.drifted_columns} of {driftReport.total_columns} columns shifted
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {driftReport.columns
+                  .filter((c) => c.severity !== 'none')
+                  .sort((a, b) => b.drift_score - a.drift_score)
+                  .map((col) => (
+                  <div key={col.column} className="flex items-center gap-2 rounded bg-gray-50 px-2.5 py-1.5">
+                    <div className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                      col.severity === 'high' ? 'bg-red-500' :
+                      col.severity === 'medium' ? 'bg-amber-500' : 'bg-blue-400'
+                    }`} />
+                    <span className="text-xs font-medium text-gray-700 flex-shrink-0">{col.column}</span>
+                    <span className="text-[10px] text-gray-400">{col.col_type}</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden ml-1">
+                      <div
+                        className={`h-full rounded-full ${
+                          col.severity === 'high' ? 'bg-red-400' :
+                          col.severity === 'medium' ? 'bg-amber-400' : 'bg-blue-300'
+                        }`}
+                        style={{ width: `${col.drift_score * 100}%` }}
+                      />
+                    </div>
+                    <span className={`text-[10px] font-medium flex-shrink-0 ${
+                      col.severity === 'high' ? 'text-red-600' :
+                      col.severity === 'medium' ? 'text-amber-600' : 'text-blue-600'
+                    }`}>
+                      {(col.drift_score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                ))}
+                {driftReport.drifted_columns === 0 && (
+                  <p className="text-xs text-emerald-600">No significant distribution drift detected ✅</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,11 @@
 <div align="center">
 
+**[中文](README.md) | [English](README_EN.md)**
+
+</div>
+
+<div align="center">
+
 # SmeltLab
 
 **AI 数据清洗 + 一键建模：上传脏数据，说一句话，拿到能训练的干净数据和模型。**

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import asyncio
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.routes.datasets import _dataframes
+from app.middleware.auth import User, get_current_user, get_optional_user
+from app.services.apikeys import fire_webhooks
 from app.schemas.api import (
     BatchApplyRecipeRequest,
     BatchApplyRecipeResponse,
@@ -31,9 +35,9 @@ router = APIRouter()
 
 
 @router.get("", response_model=list[RecipeResponse])
-async def get_recipes():
-    """List all saved recipes."""
-    recipes = list_recipes()
+async def get_recipes(user: User = Depends(get_current_user)):
+    """List the current user's saved recipes."""
+    recipes = list_recipes(author=user.id)
     return [
         RecipeResponse(
             id=r.id,
@@ -59,7 +63,7 @@ async def get_recipes():
 
 
 @router.post("", response_model=RecipeResponse)
-async def create_new_recipe(request: CreateRecipeRequest):
+async def create_new_recipe(request: CreateRecipeRequest, user: User = Depends(get_current_user)):
     """Create a new recipe from a set of cleaning steps."""
     if not request.steps:
         raise HTTPException(400, "Recipe must have at least one step")
@@ -70,6 +74,7 @@ async def create_new_recipe(request: CreateRecipeRequest):
         description=request.description,
         tags=request.tags,
         is_public=request.is_public,
+        author=user.id,
     )
 
     return RecipeResponse(
@@ -120,15 +125,19 @@ async def get_recipe_detail(recipe_id: str):
 
 
 @router.delete("/{recipe_id}")
-async def remove_recipe(recipe_id: str):
+async def remove_recipe(recipe_id: str, user: User = Depends(get_current_user)):
     """Delete a recipe."""
-    if not delete_recipe(recipe_id):
+    if not delete_recipe(recipe_id, user_id=user.id):
         raise HTTPException(404, "Recipe not found")
     return {"status": "deleted"}
 
 
 @router.post("/{recipe_id}/apply/{dataset_id}", response_model=CleanResultResponse)
-async def apply_recipe_to_dataset(recipe_id: str, dataset_id: str):
+async def apply_recipe_to_dataset(
+    recipe_id: str,
+    dataset_id: str,
+    user: User | None = Depends(get_optional_user),
+):
     """Apply a recipe to a dataset."""
     if dataset_id not in _dataframes:
         raise HTTPException(404, "Dataset not found")
@@ -149,6 +158,20 @@ async def apply_recipe_to_dataset(recipe_id: str, dataset_id: str):
     # Store cleaned DataFrame
     job_id = f"recipe_{recipe_id}_{dataset_id}"
     _dataframes[f"{dataset_id}_recipe_{recipe_id}"] = result.df_clean
+
+    if user:
+        asyncio.create_task(
+            fire_webhooks(
+                user.id,
+                "recipe.applied",
+                {
+                    "recipe_id": recipe_id,
+                    "dataset_id": dataset_id,
+                    "rows_before": result.rows_before,
+                    "rows_after": result.rows_after,
+                },
+            )
+        )
 
     return CleanResultResponse(
         job_id=job_id,
@@ -275,18 +298,18 @@ async def search_community(query: str = "", tag: str = ""):
 
 
 @router.post("/{recipe_id}/share")
-async def share(recipe_id: str):
+async def share(recipe_id: str, user: User = Depends(get_current_user)):
     """Make a recipe public."""
-    r = share_recipe(recipe_id)
+    r = share_recipe(recipe_id, user_id=user.id)
     if not r:
         raise HTTPException(404, "Recipe not found")
     return {"status": "shared", "recipe_id": recipe_id}
 
 
 @router.post("/{recipe_id}/unshare")
-async def unshare(recipe_id: str):
+async def unshare(recipe_id: str, user: User = Depends(get_current_user)):
     """Make a recipe private."""
-    r = unshare_recipe(recipe_id)
+    r = unshare_recipe(recipe_id, user_id=user.id)
     if not r:
         raise HTTPException(404, "Recipe not found")
     return {"status": "unshared", "recipe_id": recipe_id}

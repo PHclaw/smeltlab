@@ -505,6 +505,15 @@ def _suggest_fix(category: str, col: ColumnProfile) -> str:
 # File readers
 # ---------------------------------------------------------------------------
 
+def _run_reader(reader, source, file_format: str):
+    """执行读取，把「缺少可选依赖」翻译成可读的错误说明。"""
+    try:
+        return reader(source)
+    except ImportError as exc:
+        hint = "请安装 fastexcel（pip install fastexcel）" if file_format in ("xlsx", "xls") else "请检查依赖安装"
+        raise ValueError(f"解析 .{file_format} 文件缺少依赖：{exc}。{hint}") from exc
+
+
 def read_file(file_path: str | Path, file_format: str | None = None) -> pl.DataFrame:
     """Read a file into a Polars DataFrame."""
     path = Path(file_path)
@@ -526,7 +535,7 @@ def read_file(file_path: str | Path, file_format: str | None = None) -> pl.DataF
     if reader is None:
         raise ValueError(f"Unsupported file format: {file_format}. Supported: {list(readers.keys())}")
 
-    return reader(path)
+    return _run_reader(reader, path, file_format)
 
 
 def read_file_bytes(data: bytes, file_format: str) -> pl.DataFrame:
@@ -544,7 +553,7 @@ def read_file_bytes(data: bytes, file_format: str) -> pl.DataFrame:
     if reader is None:
         raise ValueError(f"Unsupported file format: {file_format}")
 
-    return reader(data)
+    return _run_reader(reader, data, file_format)
 
 
 # ---------------------------------------------------------------------------

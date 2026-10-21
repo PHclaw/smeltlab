@@ -49,7 +49,7 @@ export default function LoginPage() {
             {isRegister ? 'Create Account' : 'Welcome Back'}
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            {isRegister ? 'Start cleaning your data with AI' : 'Sign in to your DataCleanr account'}
+            {isRegister ? 'Start cleaning your data with AI' : 'Sign in to your SmeltLab account'}
           </p>
         </div>
 

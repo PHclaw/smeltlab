@@ -6,12 +6,12 @@ const { chromium } = require('playwright');
 
   // Landing page
   await page.goto('http://localhost:3000', { waitUntil: 'networkidle' });
-  await page.screenshot({ path: '/tmp/datacleanr-landing.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/smeltlab-landing.png', fullPage: true });
   console.log('Landing page screenshot saved');
 
   // Upload page
   await page.goto('http://localhost:3000/upload', { waitUntil: 'networkidle' });
-  await page.screenshot({ path: '/tmp/datacleanr-upload.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/smeltlab-upload.png', fullPage: true });
   console.log('Upload page screenshot saved');
 
   await browser.close();

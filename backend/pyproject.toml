@@ -1,5 +1,5 @@
 [project]
-name = "datacleanr"
+name = "cleansagent"
 version = "0.1.0"
 description = "AI-powered data cleaning pipeline for ML engineers"
 requires-python = ">=3.10"
@@ -11,6 +11,8 @@ dependencies = [
     "python-multipart>=0.0.12",
     "polars>=1.12.0",
     "pyarrow>=18.0.0",
+    # polars 读取 Excel 依赖 fastexcel（calamine 引擎），openpyxl 仅用于写文件
+    "fastexcel>=0.11.0",
     "openpyxl>=3.1.5",
     "anthropic>=0.39.0",
     "presidio-analyzer>=2.2.0",
@@ -26,6 +28,10 @@ dependencies = [
     "alembic>=1.14.0",
     "asyncpg>=0.30.0",
     "python-dotenv>=1.0.0",
+    # 自动建模（trainer）
+    "numpy>=1.26.0",
+    "scikit-learn>=1.5.0",
+    "joblib>=1.4.0",
 ]
 
 [project.optional-dependencies]

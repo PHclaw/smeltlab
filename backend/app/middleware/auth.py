@@ -7,9 +7,20 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.services.apikeys import validate_api_key
 from app.services.auth import decode_access_token, get_user, User
 
 security = HTTPBearer(auto_error=False)
+
+
+def _resolve_user(token: str) -> Optional[User]:
+    """JWT 优先；``dc_`` 开头按 API Key 校验。"""
+    if token.startswith("dc_"):
+        api_key = validate_api_key(token)
+        return get_user(api_key.user_id) if api_key else None
+
+    user_id = decode_access_token(token)
+    return get_user(user_id) if user_id else None
 
 
 async def get_current_user(
@@ -19,13 +30,9 @@ async def get_current_user(
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    user_id = decode_access_token(credentials.credentials)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    user = get_user(user_id)
+    user = _resolve_user(credentials.credentials)
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     return user
 
@@ -37,8 +44,4 @@ async def get_optional_user(
     if not credentials:
         return None
 
-    user_id = decode_access_token(credentials.credentials)
-    if not user_id:
-        return None
-
-    return get_user(user_id)
+    return _resolve_user(credentials.credentials)

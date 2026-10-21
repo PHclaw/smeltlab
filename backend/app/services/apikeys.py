@@ -12,11 +12,13 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+from app.core import store
 
 
 # ---------------------------------------------------------------------------
@@ -45,12 +47,45 @@ class Webhook:
     secret: str = ""  # For signing webhook payloads
 
 
-# In-memory stores
+# In-memory stores（写操作同步落盘）
 _api_keys: dict[str, APIKey] = {}       # key_id -> APIKey
 _key_hashes: dict[str, str] = {}        # key_hash -> key_id
 _webhooks: dict[str, Webhook] = {}      # webhook_id -> Webhook
 _user_webhooks: dict[str, list[str]] = {}  # user_id -> [webhook_ids]
 _user_keys: dict[str, list[str]] = {}   # user_id -> [key_ids]
+
+
+def _persist() -> None:
+    store.save(
+        "apikeys",
+        {
+            "keys": [asdict(k) for k in _api_keys.values()],
+            "webhooks": [asdict(w) for w in _webhooks.values()],
+        },
+    )
+
+
+def _restore() -> None:
+    data = store.load("apikeys", {}) or {}
+    for item in data.get("keys", []):
+        try:
+            api_key = APIKey(**item)
+        except TypeError:
+            continue
+        _api_keys[api_key.id] = api_key
+        _key_hashes[api_key.key_hash] = api_key.id
+        _user_keys.setdefault(api_key.user_id, []).append(api_key.id)
+
+    for item in data.get("webhooks", []):
+        try:
+            webhook = Webhook(**item)
+        except TypeError:
+            continue
+        _webhooks[webhook.id] = webhook
+        _user_webhooks.setdefault(webhook.user_id, []).append(webhook.id)
+
+
+_restore()
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +120,7 @@ def create_api_key(user_id: str, name: str = "") -> tuple[str, APIKey]:
         _user_keys[user_id] = []
     _user_keys[user_id].append(key_id)
 
+    _persist()
     return raw_key, api_key
 
 
@@ -99,6 +135,7 @@ def validate_api_key(raw_key: str) -> APIKey | None:
     if api_key:
         api_key.last_used = datetime.now(timezone.utc).isoformat()
         api_key.usage_count += 1
+        _persist()
 
     return api_key
 
@@ -118,6 +155,7 @@ def delete_api_key(user_id: str, key_id: str) -> bool:
     del _key_hashes[api_key.key_hash]
     del _api_keys[key_id]
     _user_keys[user_id] = [k for k in _user_keys.get(user_id, []) if k != key_id]
+    _persist()
     return True
 
 
@@ -149,6 +187,7 @@ def create_webhook(
         _user_webhooks[user_id] = []
     _user_webhooks[user_id].append(webhook_id)
 
+    _persist()
     return webhook
 
 
@@ -166,6 +205,7 @@ def delete_webhook(user_id: str, webhook_id: str) -> bool:
 
     del _webhooks[webhook_id]
     _user_webhooks[user_id] = [w for w in _user_webhooks.get(user_id, []) if w != webhook_id]
+    _persist()
     return True
 
 
@@ -198,8 +238,8 @@ async def fire_webhooks(user_id: str, event: str, payload: dict[str, Any]) -> No
                     content=body,
                     headers={
                         "Content-Type": "application/json",
-                        "X-DataCleanr-Signature": f"sha256={signature}",
-                        "X-DataCleanr-Event": event,
+                        "X-SmeltLab-Signature": f"sha256={signature}",
+                        "X-SmeltLab-Event": event,
                     },
                 )
         except Exception:

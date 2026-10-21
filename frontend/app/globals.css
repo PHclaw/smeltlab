@@ -50,6 +50,87 @@
   .badge-success {
     @apply badge bg-emerald-100 text-emerald-800;
   }
+
+  /* ---- 与主对话界面一致的中性组件 ---- */
+  .surface {
+    @apply rounded-2xl border border-gray-100 bg-white;
+  }
+
+  .surface-pad {
+    @apply surface p-5;
+  }
+
+  .chip {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs text-gray-600 transition;
+  }
+
+  .chip:hover {
+    @apply border-gray-300 bg-gray-50 text-gray-900;
+  }
+
+  .btn-solid {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-full bg-gray-900 px-4 text-xs font-medium text-white transition;
+  }
+
+  .btn-solid:hover {
+    @apply bg-gray-700;
+  }
+
+  .btn-solid:disabled {
+    @apply cursor-not-allowed bg-gray-200 text-white;
+  }
+
+  .btn-quiet {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-xs text-gray-700 transition;
+  }
+
+  .btn-quiet:hover {
+    @apply bg-gray-50;
+  }
+
+  .btn-quiet:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .tile {
+    @apply rounded-xl bg-gray-50 px-4 py-3;
+  }
+
+  .eyebrow {
+    @apply text-[11px] uppercase tracking-[0.18em] text-gray-400;
+  }
+}
+
+/* 入场动效：轻微上浮 + 淡入 */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade {
+  animation: fade-in 0.35s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-fade {
+    animation: none;
+  }
 }
 
 /* Diff highlighting */

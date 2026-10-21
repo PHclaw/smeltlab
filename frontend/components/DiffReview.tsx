@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   CheckCircle2, XCircle, ChevronDown, ChevronUp,
-  RotateCcw, Shield, Calendar, Filter, Type, Tag,
+  RotateCcw, Shield, Calendar, Filter, Type, Tag, Check,
 } from 'lucide-react';
 import type { ChangeRecord, CleanStep } from '@/lib/api';
 import { formatNumber } from '@/lib/utils';
@@ -16,6 +16,8 @@ const OP_ICONS: Record<string, typeof Shield> = {
   missing: XCircle,
   text_clean: Type,
 };
+
+import { OP_LABELS } from '@/lib/op-labels';
 
 interface DiffReviewProps {
   steps: CleanStep[];
@@ -38,7 +40,7 @@ export function DiffReview({
 }: DiffReviewProps) {
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
 
-  // Group changes by step_id
+  // 按步骤聚合变更明细
   const changesByStep = new Map<string, ChangeRecord[]>();
   for (const change of changes) {
     const existing = changesByStep.get(change.step_id) || [];
@@ -46,7 +48,6 @@ export function DiffReview({
     changesByStep.set(change.step_id, existing);
   }
 
-  // Stats
   const acceptedCount = steps
     .filter((s) => !rejectedSteps.has(s.step_id))
     .reduce((sum, s) => sum + (changesByStep.get(s.step_id)?.length || 0), 0);
@@ -56,43 +57,33 @@ export function DiffReview({
   const hasRejections = rejectedSteps.size > 0;
 
   return (
-    <div className="mt-3 space-y-3">
-      {/* Stats bar */}
-      <div className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-2.5 text-sm">
-        <div className="flex items-center gap-4">
-          <span className="text-gray-600">
-            <span className="font-medium text-emerald-600">{formatNumber(acceptedCount)}</span> accepted
+    <div className="mt-3 space-y-2.5">
+      {/* 汇总条 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gray-50 px-4 py-2.5">
+        <div className="flex items-center gap-4 text-[12.5px] text-gray-500">
+          <span>
+            <span className="font-semibold text-emerald-600">{formatNumber(acceptedCount)}</span> 条生效
           </span>
           {hasRejections && (
-            <span className="text-gray-600">
-              <span className="font-medium text-red-600">{formatNumber(rejectedCount)}</span> rejected
+            <span>
+              <span className="font-semibold text-red-500">{formatNumber(rejectedCount)}</span> 条被拒
             </span>
           )}
         </div>
-        <div className="flex gap-2">
-          {hasRejections && (
-            <button
-              onClick={onApplySelected}
-              disabled={isApplying}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Apply Selected
+        {hasRejections && (
+          <div className="flex gap-2">
+            <button onClick={onApplySelected} disabled={isApplying} className="btn-quiet h-8 px-3">
+              <CheckCircle2 size={13} />
+              应用已选
             </button>
-          )}
-          {hasRejections && (
-            <button
-              onClick={onApplyAll}
-              disabled={isApplying}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Apply All
+            <button onClick={onApplyAll} disabled={isApplying} className="btn-solid h-8 px-3">
+              全部应用
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Step groups */}
+      {/* 步骤分组 */}
       <div className="space-y-2">
         {steps.map((step) => {
           const stepChanges = changesByStep.get(step.step_id) || [];
@@ -103,82 +94,90 @@ export function DiffReview({
           return (
             <div
               key={step.step_id}
-              className={`rounded-lg border transition-all ${
-                rejected ? 'border-red-200 bg-red-50/50' : 'border-gray-200 bg-white'
+              className={`overflow-hidden rounded-xl border transition ${
+                rejected ? 'border-gray-100 bg-gray-50/60' : 'border-gray-100 bg-white'
               }`}
             >
-              {/* Step header */}
-              <div className="flex items-center gap-3 p-3">
-                {/* Checkbox */}
+              <div className="flex items-center gap-3 px-3 py-2.5">
                 <button
                   onClick={() => onToggleStep(step.step_id)}
-                  className={`flex h-5 w-5 items-center justify-center rounded border-2 transition-colors flex-shrink-0 ${
+                  aria-label={rejected ? '恢复该步骤' : '拒收该步骤'}
+                  className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${
                     rejected
-                      ? 'border-red-300 bg-white'
-                      : 'border-primary-500 bg-primary-500'
+                      ? 'border-gray-300 bg-white text-transparent hover:border-gray-400'
+                      : 'border-gray-900 bg-gray-900 text-white'
                   }`}
                 >
-                  {!rejected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                  <Check size={12} strokeWidth={3} />
                 </button>
 
-                {/* Icon + info */}
-                <div className={`flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0 ${
-                  rejected ? 'bg-red-100 text-red-500' : 'bg-primary-50 text-primary-600'
-                }`}>
-                  <Icon className="h-3.5 w-3.5" />
-                </div>
-                <div className={`flex-1 min-w-0 ${rejected ? 'opacity-50' : ''}`}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900">{step.operation}</span>
-                    <span className="text-xs text-gray-500">{step.description}</span>
-                  </div>
+                <div
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg ${
+                    rejected ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <Icon size={14} />
                 </div>
 
-                {/* Change count */}
-                <span className={`text-xs font-medium flex-shrink-0 ${rejected ? 'text-red-500 line-through' : 'text-gray-500'}`}>
-                  {formatNumber(stepChanges.length)} changes
+                <div className={`min-w-0 flex-1 ${rejected ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-gray-900">
+                      {OP_LABELS[step.operation] || step.operation}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11.5px] text-gray-400">{step.description}</p>
+                </div>
+
+                <span
+                  className={`shrink-0 text-[11.5px] ${
+                    rejected ? 'text-gray-400 line-through' : 'text-gray-500'
+                  }`}
+                >
+                  {formatNumber(stepChanges.length)} 处
                 </span>
 
-                {/* Reject indicator */}
                 {rejected && (
-                  <span className="badge bg-red-100 text-red-700 text-[10px] flex-shrink-0">rejected</span>
+                  <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] text-gray-500">
+                    已拒收
+                  </span>
                 )}
 
-                {/* Expand button */}
                 {stepChanges.length > 0 && (
                   <button
                     onClick={() => setExpandedStep(expanded ? null : step.step_id)}
-                    className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                    aria-label={expanded ? '收起明细' : '展开明细'}
+                    className="shrink-0 rounded p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
                   >
-                    {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </button>
                 )}
               </div>
 
-              {/* Expanded changes */}
               {expanded && stepChanges.length > 0 && (
                 <div className="border-t border-gray-100 px-3 pb-3">
-                  <div className="mt-2 overflow-x-auto max-h-48 overflow-y-auto rounded border border-gray-100">
-                    <table className="w-full text-xs">
+                  <div className="mt-2 max-h-48 overflow-auto rounded-lg border border-gray-100">
+                    <table className="w-full text-[11.5px]">
                       <thead className="sticky top-0 bg-gray-50">
-                        <tr className="border-b border-gray-100 text-left">
-                          <th className="px-2 py-1.5 font-medium text-gray-500 w-12">Row</th>
-                          <th className="px-2 py-1.5 font-medium text-gray-500 w-20">Column</th>
-                          <th className="px-2 py-1.5 font-medium text-gray-500">Before</th>
-                          <th className="px-2 py-1.5 font-medium text-gray-500 w-6"></th>
-                          <th className="px-2 py-1.5 font-medium text-gray-500">After</th>
+                        <tr className="text-left text-gray-500">
+                          <th className="w-12 px-2 py-1.5 font-medium">行</th>
+                          <th className="w-24 px-2 py-1.5 font-medium">列</th>
+                          <th className="px-2 py-1.5 font-medium">修改前</th>
+                          <th className="w-6 px-2 py-1.5"></th>
+                          <th className="px-2 py-1.5 font-medium">修改后</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
                         {stepChanges.slice(0, 30).map((c, i) => (
-                          <tr key={i} className="hover:bg-gray-50">
+                          <tr key={i} className="transition hover:bg-gray-50">
                             <td className="px-2 py-1 font-mono text-gray-400">#{c.row_index + 1}</td>
-                            <td className="px-2 py-1 font-mono font-medium text-gray-700">{c.column}</td>
-                            <td className="px-2 py-1 font-mono text-red-600 max-w-[120px] truncate">
+                            <td className="max-w-[120px] truncate px-2 py-1 font-mono text-gray-700">
+                              {c.column}
+                            </td>
+                            <td className="max-w-[140px] truncate px-2 py-1 font-mono text-red-500">
                               {c.before === null ? 'null' : String(c.before)}
                             </td>
                             <td className="px-2 py-1 text-center text-gray-300">→</td>
-                            <td className="px-2 py-1 font-mono text-emerald-600 max-w-[120px] truncate">
+                            <td className="max-w-[140px] truncate px-2 py-1 font-mono text-emerald-600">
                               {c.after === null ? 'null' : String(c.after)}
                             </td>
                           </tr>
@@ -186,8 +185,8 @@ export function DiffReview({
                       </tbody>
                     </table>
                     {stepChanges.length > 30 && (
-                      <p className="text-center text-[10px] text-gray-400 py-1">
-                        Showing 30 of {stepChanges.length} changes
+                      <p className="py-1 text-center text-[10.5px] text-gray-400">
+                        仅显示前 30 条，共 {stepChanges.length} 条
                       </p>
                     )}
                   </div>

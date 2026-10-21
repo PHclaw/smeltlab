@@ -1,4 +1,4 @@
-# DataCleanr - AI 数据清洗管道 MVP 产品规划
+# SmeltLab - AI 数据清洗管道 MVP 产品规划
 
 > **版本**: v0.1 MVP  
 > **目标**: 4 周内上线可付费的最小可行产品  
@@ -31,7 +31,7 @@
 
 ### 一句话定位
 
-**DataCleanr** — 用自然语言驱动的 AI 数据清洗管道，帮 ML 工程师把 3 天的数据清洗工作缩短到 3 分钟。
+**SmeltLab** — 用自然语言驱动的 AI 数据清洗管道，帮 ML 工程师把 3 天的数据清洗工作缩短到 3 分钟。
 
 ### 核心价值主张
 
@@ -48,8 +48,8 @@
 
 ### 品牌
 
-- **产品名**: DataCleanr
-- **域名候选**: datacleanr.com / datacleanr.ai / cleandr.ai
+- **产品名**: SmeltLab
+- **域名候选**: smeltlab.com / smeltlab.ai / cleandr.ai
 - **Tagline**: "Clean data in minutes, not days."
 - **中文 Tagline**: "数据清洗，从 3 天到 3 分钟。"
 
@@ -706,7 +706,7 @@ WS     /ws/clean-jobs/:id                    # 实时推送清洗进度
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  DataCleanr   Dashboard > Project > dataset_v2.csv > Clean  │
+│  SmeltLab   Dashboard > Project > dataset_v2.csv > Clean  │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ┌─ Data Overview ─────────────────────────────────────────┐ │
@@ -894,7 +894,7 @@ WS     /ws/clean-jobs/:id                    # 实时推送清洗进度
 
 ### 关键增长杠杆
 
-1. **"Cleaned with DataCleanr" 水印** — 免费用户导出的数据附带元数据标记，传播品牌
+1. **"Cleaned with SmeltLab" 水印** — 免费用户导出的数据附带元数据标记，传播品牌
 2. **社区 Recipe 市场** — 用户分享清洗配方，吸引新用户搜索特定场景
 3. **开源 Profiler** — 开源数据探测模块，GitHub star 引流到 SaaS
 
@@ -977,7 +977,7 @@ WS     /ws/clean-jobs/:id                    # 实时推送清洗进度
 ### 数据安全承诺（写进产品）
 
 ```
-🔒 DataCleanr Security Promise:
+🔒 SmeltLab Security Promise:
 1. Your data is encrypted at rest (AES-256) and in transit (TLS 1.3)
 2. Raw files are auto-deleted after 7 days (configurable)
 3. We NEVER use your data to train AI models
@@ -1073,7 +1073,7 @@ WS     /ws/clean-jobs/:id                    # 实时推送清洗进度
 
 ## 附录 A: 竞品对比矩阵
 
-| 功能 | DataCleanr | Databricks | OpenRefine | Pandas (手写) | Trifacta |
+| 功能 | SmeltLab | Databricks | OpenRefine | Pandas (手写) | Trifacta |
 |------|-----------|-----------|-----------|-------------|---------|
 | AI 自然语言清洗 | ✅ | ❌ | ❌ | ❌ | ❌ |
 | 自动数据探测 | ✅ | ✅ | 部分 | ❌ | ✅ |
@@ -1097,13 +1097,13 @@ WS     /ws/clean-jobs/:id                    # 实时推送清洗进度
 
 | 名称 | 域名 | 含义 |
 |------|------|------|
-| **DataCleanr** | datacleanr.com | 直接、好记、Flickr 式命名 |
+| **SmeltLab** | smeltlab.com | 直接、好记、Flickr 式命名 |
 | **Cleandr** | cleandr.ai | 更短、更现代 |
 | **Scrubbr** | scrubbr.dev | "scrub" = 清洗数据 |
 | **TidyData** | tidydata.ai | 致敬 Tidy Data 论文 |
 | **DataSpark** | dataspark.ai | 数据 + 火花 |
 
-**推荐: DataCleanr** — 最直白地传达产品价值，利于 SEO。
+**推荐: SmeltLab** — 最直白地传达产品价值，利于 SEO。
 
 ---
 

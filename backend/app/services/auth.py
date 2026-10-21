@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import jwt
 
+from app.core import store
 from app.core.config import get_settings
 
 
@@ -46,16 +47,33 @@ class User:
         }
 
 
-# In-memory user store
+# In-memory user store（写操作会同步落盘，重启后恢复）
 _users: dict[str, User] = {}
 _users_by_email: dict[str, str] = {}  # email -> user_id
+
+
+def _persist() -> None:
+    store.save("users", [asdict(u) for u in _users.values()])
+
+
+def _restore() -> None:
+    for item in store.load("users", []):
+        try:
+            user = User(**item)
+        except TypeError:
+            continue
+        _users[user.id] = user
+        _users_by_email[user.email] = user.id
+
+
+_restore()
 
 
 # ---------------------------------------------------------------------------
 # Password hashing (simple SHA-256 + salt for MVP — use bcrypt in production)
 # ---------------------------------------------------------------------------
 
-_SALT = "datacleanr-mvp-salt"
+_SALT = "smeltlab-mvp-salt"
 
 
 def _hash_password(password: str) -> str:
@@ -107,6 +125,7 @@ def register_user(email: str, password: str, name: str = "") -> User:
     )
     _users[user_id] = user
     _users_by_email[email] = user_id
+    _persist()
     return user
 
 

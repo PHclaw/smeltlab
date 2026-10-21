@@ -8,12 +8,13 @@ to new datasets for consistent, repeatable data cleaning.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 import polars as pl
 
+from app.core import store
 from app.services.cleaner import (
     CleanPlan,
     CleanResult,
@@ -53,8 +54,31 @@ class Recipe:
             self.created_at = datetime.now(timezone.utc).isoformat()
 
 
-# In-memory store
+# In-memory store（写操作同步落盘）
 _recipes: dict[str, Recipe] = {}
+
+
+def _persist() -> None:
+    store.save("recipes", [asdict(r) for r in _recipes.values()])
+
+
+def _restore() -> None:
+    for item in store.load("recipes", []):
+        steps = []
+        for raw in item.get("steps", []) or []:
+            try:
+                steps.append(RecipeStep(**raw))
+            except TypeError:
+                continue
+        item = {**item, "steps": steps}
+        try:
+            recipe = Recipe(**item)
+        except TypeError:
+            continue
+        _recipes[recipe.id] = recipe
+
+
+_restore()
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +115,7 @@ def create_recipe(
         author=author,
     )
     _recipes[recipe_id] = recipe
+    _persist()
     return recipe
 
 
@@ -99,9 +124,15 @@ def get_recipe(recipe_id: str) -> Recipe | None:
     return _recipes.get(recipe_id)
 
 
-def list_recipes() -> list[Recipe]:
-    """List all recipes, sorted by creation date (newest first)."""
-    return sorted(_recipes.values(), key=lambda r: r.created_at, reverse=True)
+def list_recipes(author: str | None = None) -> list[Recipe]:
+    """List recipes, sorted by creation date (newest first).
+
+    传入 ``author`` 时只返回该用户的配方。
+    """
+    items = [
+        r for r in _recipes.values() if author is None or r.author == author
+    ]
+    return sorted(items, key=lambda r: r.created_at, reverse=True)
 
 
 def list_community_recipes(query: str = "", tag: str = "") -> list[Recipe]:
@@ -119,34 +150,49 @@ def list_community_recipes(query: str = "", tag: str = "") -> list[Recipe]:
     return sorted(results, key=lambda r: (-r.usage_count, r.created_at))
 
 
-def share_recipe(recipe_id: str) -> Recipe | None:
-    """Make a recipe public."""
+def _owned(recipe_id: str, user_id: str | None) -> Recipe | None:
     recipe = _recipes.get(recipe_id)
+    if not recipe:
+        return None
+    if user_id is not None and recipe.author != user_id:
+        return None
+    return recipe
+
+
+def share_recipe(recipe_id: str, user_id: str | None = None) -> Recipe | None:
+    """Make a recipe public."""
+    recipe = _owned(recipe_id, user_id)
     if recipe:
         recipe.is_public = True
+        _persist()
     return recipe
 
 
-def unshare_recipe(recipe_id: str) -> Recipe | None:
+def unshare_recipe(recipe_id: str, user_id: str | None = None) -> Recipe | None:
     """Make a recipe private."""
-    recipe = _recipes.get(recipe_id)
+    recipe = _owned(recipe_id, user_id)
     if recipe:
         recipe.is_public = False
+        _persist()
     return recipe
 
 
-def delete_recipe(recipe_id: str) -> bool:
+def delete_recipe(recipe_id: str, user_id: str | None = None) -> bool:
     """Delete a recipe. Returns True if found and deleted."""
-    if recipe_id in _recipes:
-        del _recipes[recipe_id]
-        return True
-    return False
+    recipe = _owned(recipe_id, user_id)
+    if not recipe:
+        return False
+    del _recipes[recipe_id]
+    _persist()
+    return True
 
 
 def increment_usage(recipe_id: str) -> None:
     """Increment the usage count of a recipe."""
-    if recipe_id in _recipes:
-        _recipes[recipe_id].usage_count += 1
+    recipe = _recipes.get(recipe_id)
+    if recipe:
+        recipe.usage_count += 1
+        _persist()
 
 
 # ---------------------------------------------------------------------------

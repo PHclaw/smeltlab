@@ -226,6 +226,7 @@ def _chunk_by_character(
     start = 0
 
     while start < len(text):
+        start = max(start, 0)
         end = min(start + chunk_size, len(text))
 
         # Try to break at sentence boundary
@@ -245,7 +246,9 @@ def _chunk_by_character(
             ))
             idx += 1
 
-        start = end - overlap if overlap > 0 else end
+        next_start = end - overlap if 0 < overlap < chunk_size else end
+        # 保证指针严格前进，否则（尤其是尾部窗口）会死循环
+        start = next_start if next_start > start else end
 
     return chunks
 

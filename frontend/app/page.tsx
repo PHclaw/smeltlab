@@ -1,266 +1,171 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
-  Upload, Sparkles, GitCompare, Shield, Zap, Repeat, FileDown,
+  Activity,
+  AlignLeft,
+  BarChart3,
+  CircleDashed,
+  Copy,
+  ShieldCheck,
+  Sparkles,
+  Sprout,
 } from 'lucide-react';
+import AppShell from '@/components/agent/AppShell';
+import Composer from '@/components/agent/Composer';
+import {
+  type AgentStatus,
+  type Attachment,
+  getAgentStatus,
+  newConversationId,
+  titleFrom,
+  upsertConversation,
+} from '@/lib/agent';
+import { useAuth } from '@/lib/auth';
 
-export default function LandingPage() {
+const QUICK_ACTIONS = [
+  { label: '数据体检', icon: Activity, prompt: '帮我检查这个数据集的质量问题，给出健康报告和评分' },
+  { label: '智能去重', icon: Copy, prompt: '删除数据中的重复行，并告诉我去掉了多少条' },
+  { label: '缺失值处理', icon: CircleDashed, prompt: '分析缺失值分布，给出填充或删除的建议' },
+  { label: '敏感信息脱敏', icon: ShieldCheck, prompt: '识别并脱敏邮箱、手机号、身份证号等敏感信息' },
+  { label: '格式标准化', icon: AlignLeft, prompt: '统一日期与文本格式，修正大小写和空格问题' },
+  { label: '数据增强', icon: Sprout, prompt: '为训练数据生成增强样本，提升模型的泛化能力' },
+  { label: '训练模型', icon: BarChart3, prompt: '帮我用这份数据训练一个模型，先看一下数据结构并给出训练配置' },
+];
+
+export default function EntryPage() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [sessionId, setSessionId] = useState('');
+  const [status, setStatus] = useState<AgentStatus | null>(null);
+
+  useEffect(() => {
+    getAgentStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+
+  // 已在首页时再点「新建会话」：清空当前草稿
+  useEffect(() => {
+    const reset = () => {
+      setInput('');
+      setAttachments([]);
+      setSessionId('');
+    };
+    window.addEventListener('smeltlab:new-session', reset);
+    return () => window.removeEventListener('smeltlab:new-session', reset);
+  }, []);
+
+  /** 上传附件和发起对话都要会话 id，首次交互时惰性创建 */
+  const ensureSessionId = () => {
+    if (sessionId) return sessionId;
+    const id = newConversationId();
+    setSessionId(id);
+    return id;
+  };
+
+  const handleSubmit = (text?: string, forcedSkill?: string) => {
+    const message = (text ?? input).trim();
+    if (!message) return;
+
+    const id = sessionId || newConversationId();
+    const now = Date.now();
+    const activeSkill = forcedSkill;
+
+    upsertConversation({
+      id,
+      title: titleFrom(message),
+      createdAt: now,
+      updatedAt: now,
+      messages: [
+        {
+          id: `${now}`,
+          role: 'user',
+          content: message,
+          attachments,
+          skill: activeSkill,
+          createdAt: now,
+        },
+      ],
+    });
+
+    router.push(`/chat/${id}?autostart=1`);
+  };
+
   return (
-    <div className="min-h-screen">
-      {/* Nav */}
-      <nav className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-lg font-bold text-gray-900">DataCleanr</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a href="#pricing" className="text-sm text-gray-600 hover:text-gray-900">Pricing</a>
-            <Link href="/upload" className="btn-primary">
-              Try Free
-            </Link>
-          </div>
-        </div>
-      </nav>
-
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pt-20 pb-16 text-center">
-        <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-4 py-1.5 text-sm text-primary-700 mb-6">
-          <Sparkles className="h-3.5 w-3.5" />
-          AI-Powered Data Cleaning for ML Engineers
-        </div>
-        <h1 className="text-5xl font-bold tracking-tight text-gray-900 sm:text-6xl">
-          Clean data in minutes,
-          <br />
-          <span className="text-primary-600">not days.</span>
-        </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-lg text-gray-600">
-          Upload your messy dataset, tell our AI what you need in plain English,
-          and get clean, ML-ready data back. No more writing Pandas scripts at 2 AM.
-        </p>
-        <div className="mt-10 flex items-center justify-center gap-4">
-          <Link href="/upload" className="btn-primary text-base px-8 py-3">
-            <Upload className="mr-2 h-5 w-5" />
-            Upload Your Data
+    <AppShell scroll={false}>
+      <div className="relative flex h-full flex-col bg-white">
+        {/* 顶部 */}
+        <div className="flex h-14 items-center justify-center">
+          <Link
+            href="/landing#pricing"
+            className="flex h-8 items-center gap-1.5 rounded-full bg-indigo-50 px-3.5 text-[12.5px] font-medium text-indigo-600 transition hover:bg-indigo-100"
+          >
+            <Sparkles size={13} />
+            升级套餐
           </Link>
-          <a href="#how-it-works" className="btn-secondary text-base px-8 py-3">
-            See How It Works
-          </a>
         </div>
-        <p className="mt-4 text-sm text-gray-500">
-          Free tier: 5,000 rows/month. No credit card required.
-        </p>
-      </section>
 
-      {/* How it works */}
-      <section id="how-it-works" className="bg-white py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold text-gray-900">
-            Three steps to clean data
-          </h2>
-          <div className="mt-16 grid gap-8 md:grid-cols-3">
-            {[
-              {
-                icon: Upload,
-                step: '1',
-                title: 'Upload',
-                desc: 'Drag and drop your CSV, JSON, Excel, or JSONL file. Our AI instantly profiles your data and generates a health report.',
-              },
-              {
-                icon: Sparkles,
-                step: '2',
-                title: 'Describe',
-                desc: 'Tell the AI what you need in plain English: "Remove duplicates, mask emails, standardize dates." Or use one-click preset actions.',
-              },
-              {
-                icon: FileDown,
-                step: '3',
-                title: 'Export',
-                desc: 'Review every change with a visual diff, accept or reject individual modifications, then download your clean data.',
-              },
-            ].map((item) => (
-              <div key={item.step} className="card text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-100 text-primary-600">
-                  <item.icon className="h-6 w-6" />
-                </div>
-                <div className="mb-2 text-sm font-medium text-primary-600">Step {item.step}</div>
-                <h3 className="mb-2 text-xl font-semibold text-gray-900">{item.title}</h3>
-                <p className="text-sm text-gray-600">{item.desc}</p>
-              </div>
+        {/* 中部 */}
+        <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
+          <h1 className="select-none text-[52px] font-black leading-none tracking-[-0.035em] text-gray-900">
+            SmeltLab
+          </h1>
+          <p className="mt-4 text-[13.5px] text-gray-400">
+            {user ? `${user.name}，把脏数据交给对话` : '把脏数据交给对话'}
+          </p>
+
+          <div className="mt-9 w-full max-w-[720px]">
+            <Composer
+              variant="hero"
+              value={input}
+              onChange={setInput}
+              onSubmit={() => handleSubmit()}
+              getSessionId={ensureSessionId}
+              attachments={attachments}
+              onAttachmentsChange={setAttachments}
+              placeholder="描述你想怎么处理数据，也可以把文件拖进来"
+            />
+          </div>
+
+          {status && !status.available && (
+            <p className="mt-3 text-[12px] text-amber-600">
+              未检测到本地 pi 引擎，请先安装：npm install -g @earendil-works/pi-coding-agent
+            </p>
+          )}
+
+          <div className="mt-6 flex max-w-[720px] flex-wrap items-center justify-center gap-2">
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action.label}
+                onClick={() => {
+                  setInput(action.prompt);
+                  // 快捷入口统一走数据清洗技能
+                  handleSubmit(action.prompt, 'data-cleaner');
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-[12.5px] text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+              >
+                <action.icon size={13} strokeWidth={1.8} className="text-gray-500" />
+                {action.label}
+              </button>
             ))}
           </div>
         </div>
-      </section>
 
-      {/* Features */}
-      <section className="py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold text-gray-900">
-            Built for ML workflows
-          </h2>
-          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              {
-                icon: Zap,
-                title: 'AI Data Profiling',
-                desc: 'Automatic schema detection, missing value analysis, outlier detection, and quality scoring in seconds.',
-              },
-              {
-                icon: Sparkles,
-                title: 'Natural Language Cleaning',
-                desc: 'Describe what you want in plain English. AI understands and generates deterministic cleaning scripts.',
-              },
-              {
-                icon: Shield,
-                title: 'PII Detection & Masking',
-                desc: 'Automatically detect and redact emails, phone numbers, addresses, SSNs, and Chinese ID numbers.',
-              },
-              {
-                icon: Repeat,
-                title: 'Smart Deduplication',
-                desc: 'Exact and fuzzy duplicate detection. AI identifies near-duplicates that simple matching misses.',
-              },
-              {
-                icon: GitCompare,
-                title: 'Visual Diff Review',
-                desc: 'See every change before applying. Accept or reject individual modifications like a Git code review.',
-              },
-              {
-                icon: FileDown,
-                title: 'Reusable Recipes',
-                desc: 'Save your cleaning steps as reusable recipes. Apply the same pipeline to new data with one click.',
-              },
-            ].map((f) => (
-              <div key={f.title} className="card">
-                <f.icon className="mb-3 h-6 w-6 text-primary-600" />
-                <h3 className="mb-2 text-lg font-semibold text-gray-900">{f.title}</h3>
-                <p className="text-sm text-gray-600">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Problem */}
-      <section className="bg-gray-900 py-20 text-white">
-        <div className="mx-auto max-w-4xl px-6 text-center">
-          <h2 className="text-3xl font-bold">
-            80% of ML time is spent cleaning data.
-          </h2>
-          <p className="mt-6 text-lg text-gray-400">
-            Data scientists spend more time wrestling with CSV files than building models.
-            Hand-written Pandas scripts are fragile, hard to review, and impossible to reuse.
-            <br /><br />
-            DataCleanr turns 3 days of data cleaning into 3 minutes.
-          </p>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-20">
-        <div className="mx-auto max-w-4xl px-6">
-          <h2 className="text-center text-3xl font-bold text-gray-900">
-            Simple pricing
-          </h2>
-          <div className="mt-12 grid gap-8 md:grid-cols-2">
-            {/* Free */}
-            <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900">Free</h3>
-              <div className="mt-2">
-                <span className="text-4xl font-bold text-gray-900">$0</span>
-                <span className="text-gray-500">/month</span>
-              </div>
-              <ul className="mt-6 space-y-3 text-sm text-gray-600">
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> 5,000 rows/month
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> 10MB file upload
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> AI cleaning (3/day)
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> All preset operations
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> CSV export
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> 3 saved recipes
-                </li>
-              </ul>
-              <Link href="/upload" className="btn-secondary mt-8 w-full">
-                Get Started Free
-              </Link>
-            </div>
-
-            {/* Pro */}
-            <div className="card border-primary-200 ring-2 ring-primary-500">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Pro</h3>
-                <span className="badge bg-primary-100 text-primary-800">Popular</span>
-              </div>
-              <div className="mt-2">
-                <span className="text-4xl font-bold text-gray-900">$49</span>
-                <span className="text-gray-500">/month</span>
-              </div>
-              <ul className="mt-6 space-y-3 text-sm text-gray-600">
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> 500,000 rows/month
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> 100MB file upload
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> Unlimited AI cleaning
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> All preset operations
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> CSV/JSON/JSONL/Excel export
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> Unlimited recipes
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-emerald-500">✓</span> Clean history (unlimited)
-                </li>
-              </ul>
-              <Link href="/upload" className="btn-primary mt-8 w-full">
-                Start Pro Trial
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="bg-primary-600 py-16">
-        <div className="mx-auto max-w-4xl px-6 text-center">
-          <h2 className="text-3xl font-bold text-white">
-            Ready to clean your data?
-          </h2>
-          <p className="mt-4 text-lg text-primary-100">
-            Upload your dataset and see results in under a minute.
-          </p>
-          <Link href="/upload" className="mt-8 inline-flex items-center rounded-lg bg-white px-8 py-3 text-base font-semibold text-primary-600 shadow-sm transition-colors hover:bg-primary-50">
-            <Upload className="mr-2 h-5 w-5" />
-            Try DataCleanr Free
+        {/* 底部 */}
+        <div className="flex items-center justify-center pb-5">
+          <Link
+            href="/recipes"
+            className="flex items-center gap-1.5 text-[12px] text-gray-400 transition hover:text-gray-600"
+            title="去灵感库看看现成的清洗配方"
+          >
+            <Sparkles size={12} />
+            探索灵感
           </Link>
         </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-200 bg-white py-8">
-        <div className="mx-auto max-w-6xl px-6 text-center text-sm text-gray-500">
-          <p>© 2026 DataCleanr. Clean data in minutes, not days.</p>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </AppShell>
   );
 }

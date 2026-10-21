@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.routes.datasets import _dataframes, _profiles
+from app.middleware.auth import User, get_optional_user
+from app.services.apikeys import fire_webhooks
 from app.schemas.api import (
     ChangeRecordSchema,
     ChatRequest,
@@ -382,7 +385,11 @@ async def chat_clean(dataset_id: str, request: ChatRequest):
 
 
 @router.post("/chat/{conversation_id}/execute", response_model=ChatResponse)
-async def execute_chat_plan(conversation_id: str, request: ExecuteChatRequest):
+async def execute_chat_plan(
+    conversation_id: str,
+    request: ExecuteChatRequest,
+    user: User | None = Depends(get_optional_user),
+):
     """Execute the current plan within a conversation."""
     conversation = get_conversation(conversation_id)
     if not conversation:
@@ -441,6 +448,20 @@ async def execute_chat_plan(conversation_id: str, request: ExecuteChatRequest):
         if msg.role == "assistant" and msg.response_type == "confirm":
             last_msg = msg.content
             break
+
+    if user:
+        asyncio.create_task(
+            fire_webhooks(
+                user.id,
+                "clean.completed",
+                {
+                    "conversation_id": conversation_id,
+                    "rows_before": result.rows_before,
+                    "rows_after": result.rows_after,
+                    "total_changes": result.total_changes,
+                },
+            )
+        )
 
     return ChatResponse(
         conversation_id=conversation_id,

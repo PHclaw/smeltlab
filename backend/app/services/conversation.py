@@ -98,7 +98,7 @@ def get_conversation(conversation_id: str) -> Conversation | None:
 # Conversational LLM Prompt
 # ---------------------------------------------------------------------------
 
-_CHAT_SYSTEM_PROMPT = """You are DataCleanr AI, an expert data cleaning assistant. You help users clean their data through natural conversation.
+_CHAT_SYSTEM_PROMPT = """You are SmeltLab AI, an expert data cleaning assistant. You help users clean their data through natural conversation.
 
 You can respond with different types:
 - "propose": Suggest a new cleaning plan based on user request

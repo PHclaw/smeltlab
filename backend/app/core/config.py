@@ -6,10 +6,10 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     app_secret_key: str = "change-me-to-a-random-string"
-    app_cors_origins: str = "http://localhost:3000"
+    app_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # Database
-    database_url: str = "sqlite+aiosqlite:///./datacleanr.db"
+    database_url: str = "sqlite+aiosqlite:///./smeltlab.db"
 
     # AI
     ai_provider: str = "glm"  # glm | anthropic
@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     # Storage
     storage_backend: str = "local"  # local | s3 | r2
     local_storage_path: str = "./uploads"
+
+    # PiAgent (本地 agent 引擎，走 pi CLI 子进程)
+    piagent_enabled: bool = True
+    piagent_exe: str = "pi"
+    piagent_timeout: int = 600  # 单轮执行的绝对上限（秒）
+    piagent_idle_timeout: int = 240  # 连续多久没有输出就判定卡死（秒）
+    piagent_provider: str = ""  # 留空则用 pi 自身配置
+    piagent_model: str = ""
+    piagent_workspace_root: str = ""  # 留空则用 uploads/pi_workspace
+    piagent_skills_root: str = ""  # 留空则不支持技能
 
     # Redis
     redis_url: str = "redis://localhost:6379"

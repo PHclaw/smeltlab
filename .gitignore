@@ -29,8 +29,20 @@ uploads/
 # Data
 *.db
 *.sqlite
+# 服务层 JSON 落盘（用户 / 项目 / 配方 / Key）
+data/
 
 # Test coverage
 htmlcov/
 .coverage
 .gstack/
+
+# Logs & 本地运行产物
+*.log
+.server.log
+.server.err.log
+server.log
+server.err
+.dev.log
+.dev.err.log
+_cli_out.csv

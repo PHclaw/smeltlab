@@ -1,5 +1,5 @@
 /**
- * DataCleanr API client
+ * SmeltLab API client
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
@@ -193,12 +193,21 @@ export interface LLMValidationResult {
 
 // --- API functions ---
 
-export async function uploadFile(file: File): Promise<DatasetUploadResponse> {
+/** 带上登录态（JWT 或 API Key），未登录时返回原样 */
+export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  if (typeof window === 'undefined') return extra;
+  const token = localStorage.getItem('auth_token');
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
+export async function uploadFile(file: File, projectId?: string): Promise<DatasetUploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
+  if (projectId) formData.append('project_id', projectId);
 
   const res = await fetch(`${API_BASE}/datasets/upload`, {
     method: 'POST',
+    headers: authHeaders(),
     body: formData,
   });
 
@@ -207,6 +216,26 @@ export async function uploadFile(file: File): Promise<DatasetUploadResponse> {
     throw new Error(err.detail || err.message || 'Upload failed');
   }
 
+  return res.json();
+}
+
+export interface ProjectDataset {
+  id: string;
+  name: string;
+  format: string;
+  row_count: number;
+  col_count: number;
+  file_size_bytes: number;
+  status: string;
+  created_at: string;
+}
+
+/** 项目下的数据集列表 */
+export async function getProjectDatasets(projectId: string): Promise<ProjectDataset[]> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/datasets`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch project datasets');
   return res.json();
 }
 
@@ -467,7 +496,7 @@ export async function applySelective(
 // --- Recipe API ---
 
 export async function getRecipes(): Promise<Recipe[]> {
-  const res = await fetch(`${API_BASE}/recipes`);
+  const res = await fetch(`${API_BASE}/recipes`, { headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to fetch recipes');
   return res.json();
 }
@@ -480,7 +509,7 @@ export async function createRecipe(
 ): Promise<Recipe> {
   const res = await fetch(`${API_BASE}/recipes`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ name, description, steps, tags }),
   });
   if (!res.ok) {
@@ -491,17 +520,17 @@ export async function createRecipe(
 }
 
 export async function deleteRecipe(recipeId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/recipes/${recipeId}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/recipes/${recipeId}`, { method: 'DELETE', headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to delete recipe');
 }
 
 export async function shareRecipe(recipeId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/recipes/${recipeId}/share`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/recipes/${recipeId}/share`, { method: 'POST', headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to share recipe');
 }
 
 export async function unshareRecipe(recipeId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/recipes/${recipeId}/unshare`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/recipes/${recipeId}/unshare`, { method: 'POST', headers: authHeaders() });
   if (!res.ok) throw new Error('Failed to unshare recipe');
 }
 
@@ -775,4 +804,130 @@ export async function cancelAugmentation(
   await fetch(`${API_BASE}/datasets/${datasetId}/augment/${taskId}/cancel`, {
     method: 'POST',
   });
+}
+
+/* ------------------------------------------------------------------ 训练任务 */
+
+export interface TrainJobResult {
+  task: 'classification' | 'regression';
+  target: string;
+  model: string;
+  params: Record<string, unknown>;
+  rows: { train: number; test: number; total: number };
+  split: string;
+  features: number;
+  metrics: Record<string, number>;
+  charts: Record<string, unknown>;
+  curve?: number[][];
+  importance?: { name: string; value: number }[];
+  warnings?: string[];
+  artifacts?: Record<string, string>;
+  elapsed_seconds?: number;
+}
+
+export interface TrainJob {
+  id: string;
+  session_id: string;
+  status: 'queued' | 'running' | 'done' | 'error';
+  pct: number;
+  stage: string;
+  metrics: Record<string, number>;
+  history: number[][];
+  logs: string[];
+  result: TrainJobResult | null;
+  error: string | null;
+  script: string;
+  summary: Record<string, unknown>;
+  elapsed: number;
+}
+
+export interface TrainJobRequest {
+  session_id: string;
+  file: string;
+  target: string;
+  task?: string;
+  model?: string;
+  params?: Record<string, unknown>;
+  group?: string | null;
+  drop?: string[];
+  test_size?: number;
+}
+
+export async function createTrainJob(payload: TrainJobRequest): Promise<TrainJob> {
+  const res = await fetch(`${API_BASE}/train/jobs`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '创建训练任务失败');
+  return data;
+}
+
+export async function getTrainJob(jobId: string): Promise<TrainJob> {
+  const res = await fetch(`${API_BASE}/train/jobs/${jobId}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error('训练任务不存在');
+  return res.json();
+}
+
+export function trainFileUrl(jobId: string, name: string): string {
+  return `${API_BASE}/train/jobs/${jobId}/files/${encodeURIComponent(name)}`;
+}
+
+export function trainCodeUrl(jobId: string): string {
+  return `${API_BASE}/train/jobs/${jobId}/code`;
+}
+
+export interface TrainDataset {
+  name: string;
+  format: string;
+  size: number;
+}
+
+export interface TrainSchemaColumn {
+  name: string;
+  dtype: string;
+  unique: number;
+  null_pct: number;
+  top?: string[];
+}
+
+export interface TrainRecommendation {
+  target: string | null;
+  group: string | null;
+  drop: string[];
+  task: 'classification' | 'regression' | 'auto';
+  classes: string[];
+  class_counts?: Record<string, number>;
+  target_stats?: { min: number; max: number; mean: number };
+  model: string;
+  params?: Record<string, number>;
+  test_size: number;
+}
+
+export interface TrainSchema {
+  file: string;
+  rows: number;
+  cols: number;
+  columns: TrainSchemaColumn[];
+  target_candidates: TrainSchemaColumn[];
+  recommendation?: TrainRecommendation;
+}
+
+export async function getTrainDatasets(sessionId: string): Promise<TrainDataset[]> {
+  const res = await fetch(`${API_BASE}/train/datasets?session_id=${encodeURIComponent(sessionId)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('读取工作区文件失败');
+  return res.json();
+}
+
+export async function getTrainSchema(sessionId: string, file: string): Promise<TrainSchema> {
+  const res = await fetch(
+    `${API_BASE}/train/schema?session_id=${encodeURIComponent(sessionId)}&file=${encodeURIComponent(file)}`,
+    { headers: authHeaders() },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '读取数据结构失败');
+  return data;
 }

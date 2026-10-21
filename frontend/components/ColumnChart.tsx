@@ -19,16 +19,17 @@ interface ColumnChartProps {
   height?: number;
 }
 
+// 与主对话界面一致的中性色阶（深 -> 浅）
 const COLORS = [
-  '#6366f1', '#818cf8', '#a5b4fc', '#c7d2fe', '#e0e7ff',
-  '#4f46e5', '#4338ca', '#3730a3', '#312e81', '#1e1b4b',
+  '#111827', '#1f2937', '#374151', '#4b5563', '#6b7280',
+  '#9ca3af', '#d1d5db', '#e5e7eb', '#f3f4f6', '#f9fafb',
 ];
 
-export function ColumnChart({ type, data, color = '#6366f1', height = 140 }: ColumnChartProps) {
+export function ColumnChart({ type, data, color = '#111827', height = 140 }: ColumnChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[140px] text-xs text-gray-400">
-        No data
+        暂无数据
       </div>
     );
   }
@@ -52,7 +53,7 @@ export function ColumnChart({ type, data, color = '#6366f1', height = 140 }: Col
               border: '1px solid #e5e7eb',
               boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
             }}
-            formatter={(value: number) => [value, 'Count']}
+            formatter={(value: number) => [value, '数量']}
           />
           <Bar dataKey="count" radius={[3, 3, 0, 0]}>
             {data.map((_, index) => (
